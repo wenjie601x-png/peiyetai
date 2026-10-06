@@ -1208,18 +1208,26 @@ function wrapCols(t, cols) {
   return (out.length ? out : [""]).map((seg, i) => i ? seg.replace(/^ +/, "") : seg);
 }
 
+/* Why there is no column padding below.
+   Aligning mixed CJK/Latin text with spaces requires the CJK advance width to
+   be an exact integer multiple of the space width. Measured in this app's own
+   font stack it is 1.667x (IBM Plex Mono advances 0.6em, the CJK fallback
+   1.0em); Notepad's Consolas + YaHei pairing gives 1.818x. Neither is an
+   integer, so no amount of padding can line the columns up -- and Word's
+   proportional default makes it hopeless regardless. Delimiters survive every
+   font, and "|" additionally lets the table paste into Excel via
+   Data > Text to Columns.                                                   */
+const CELL = "  |  ";
+
 /** One record as plain text. `n` is its 1-based position in the export. */
 function formatRecord(rec, n) {
   const L = [];
-  const title = n + ". " + rec.module;
-  L.push("--- " + title + " " + rule("-", Math.max(3, 62 - dispWidth(title) - 5)));
-  L.push("    " + stamp(rec.t));
+  L.push("[" + n + "] " + rec.module + "    " + stamp(rec.t));
 
   if (rec.inputs && rec.inputs.length) {
     L.push("");
     L.push("  输入");
-    const w = Math.max.apply(null, rec.inputs.map(r => dispWidth(r[0])));
-    rec.inputs.forEach(r => L.push("    " + padTo(r[0], w) + "   " + r[1]));
+    rec.inputs.forEach(r => L.push("    " + r[0] + "：" + r[1]));
   }
   if (rec.formula) {
     L.push("");
@@ -1229,21 +1237,15 @@ function formatRecord(rec, n) {
     if (rec.result) L.push("    = " + rec.result);
   } else if (rec.result) {
     L.push("");
-    L.push("  结果  " + rec.result);
+    L.push("  结果：" + rec.result);
   }
   if (rec.table && rec.table.head && rec.table.rows && rec.table.rows.length) {
     L.push("");
-    if (rec.tableTitle) L.push("  " + rec.tableTitle);
-    const all = [rec.table.head].concat(rec.table.rows);
-    const cols = rec.table.head.length;
-    const w = [];
-    for (let c = 0; c < cols; c++)
-      w.push(Math.max.apply(null, all.map(r => dispWidth(r[c] == null ? "" : r[c]))));
-    const line = r => ("    " + r.map((v, c) => padTo(v == null ? "" : v, w[c])).join("  "))
-                        .replace(/\s+$/, "");
-    L.push(line(rec.table.head));
-    L.push("    " + rule("-", w.reduce((a, b) => a + b, 0) + (cols - 1) * 2));
-    rec.table.rows.forEach(r => L.push(line(r)));
+    L.push("  " + (rec.tableTitle || "表格"));
+    const cell = v => String(v == null ? "" : v).trim();
+    L.push("    " + rec.table.head.map(cell).join(CELL));
+    L.push("    " + rule("-", 46));
+    rec.table.rows.forEach(r => L.push("    " + r.map(cell).join(CELL)));
   }
   if (rec.say) {
     L.push("");
@@ -1254,7 +1256,7 @@ function formatRecord(rec, n) {
     L.push("");
     L.push("  提示");
     rec.notes.forEach(t => wrapCols(t, 56).forEach((seg, i) =>
-      L.push("    " + (i === 0 ? "! " : "  ") + seg)));
+      L.push("    " + (i === 0 ? "- " : "  ") + seg)));
   }
   return L.join("\n");
 }
@@ -1263,16 +1265,19 @@ function formatRecord(rec, n) {
 function formatRecords(recs, nowMs) {
   const now = nowMs == null ? Date.now() : nowMs;
   const head = [
-    rule("=", 62),
+    rule("=", 58),
     "  配液台 · 实验记录",
     "  导出于 " + stamp(now) + "    共 " + recs.length + " 条",
-    rule("=", 62),
+    rule("=", 58),
     ""
   ];
   if (!recs.length) return head.concat(["  （还没有记录）", ""]).join("\n");
   const foot = [
     "",
-    rule("-", 62),
+    rule("-", 58),
+    "表格用 | 分隔：不同字体下中英文宽度比不是整数，空格对齐必然错位；",
+    "分隔符在任何字体下都成立，也能用 Excel 的「分列」按 | 拆开。",
+    "",
     "摩尔质量按 IUPAC 2021 标准原子量。",
     "缓冲液配比为理论值（已含 Davies 活度校正），残余误差 ±0.1-0.2 pH，",
     "配好必须用 pH 计实测、用 HCl / NaOH 微调。浓酸稀释一律酸入水。",
@@ -2613,7 +2618,9 @@ mod({ id: "records", group: "记录", name: "实验记录", title: "实验记录
       h("div", { class: "card" }, bar,
         h("div", { class: "tiny" },
           "「复制全部」在任何环境都能用；「下载 .txt」在 peiyetai.netlify.app 上可用，" +
-          "在 claude.ai 的 Artifact 链接里会被沙箱挡掉（那里请用复制）。")),
+          "在 claude.ai 的 Artifact 链接里会被沙箱挡掉（那里请用复制）。" +
+          "表格用 | 分隔而不是空格对齐 —— 中英文宽度比在各种字体下都不是整数，" +
+          "空格对齐必然错位；| 在任何字体下都成立，也能用 Excel 的「分列」按 | 拆开。")),
       h("div", { class: "card" }, h("h3", null, "记录条目"), list),
       h("div", { class: "card" }, h("h3", null, "导出预览"), preview)));
     render();

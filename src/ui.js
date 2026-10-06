@@ -1312,7 +1312,9 @@ mod({ id: "records", group: "记录", name: "实验记录", title: "实验记录
       h("div", { class: "card" }, bar,
         h("div", { class: "tiny" },
           "「复制全部」在任何环境都能用；「下载 .txt」在 peiyetai.netlify.app 上可用，" +
-          "在 claude.ai 的 Artifact 链接里会被沙箱挡掉（那里请用复制）。")),
+          "在 claude.ai 的 Artifact 链接里会被沙箱挡掉（那里请用复制）。" +
+          "表格用 | 分隔而不是空格对齐 —— 中英文宽度比在各种字体下都不是整数，" +
+          "空格对齐必然错位；| 在任何字体下都成立，也能用 Excel 的「分列」按 | 拆开。")),
       h("div", { class: "card" }, h("h3", null, "记录条目"), list),
       h("div", { class: "card" }, h("h3", null, "导出预览"), preview)));
     render();

@@ -245,31 +245,31 @@ const r2 = { t: new Date(2026,9,6,16,22).getTime(), module: "梯度稀释",
            rows: [["1","5 mM","500 µL","9.5 mL"],["2","1 mM","100 µL","9.9 mL"]] } };
 
 const one = formatRecord(r1, 1);
-ok("单条含模块名",   one.includes("1. 配制溶液 · 称取质量"), true);
+ok("单条含模块名",   one.includes("[1] 配制溶液 · 称取质量"), true);
 ok("单条含公式",     one.includes("m = M · C · V"), true);
 ok("单条含结果",     one.includes("= 29.22 mg"), true);
-ok("单条含提示",     one.includes("! 按 0.1 mg"), true);
-// scope strictly to the 输入 block: the lines between "  输入" and the next blank
-const oneLines = one.split(NL);
-const iStart = oneLines.indexOf("  输入") + 1;
-const iEnd = oneLines.indexOf("", iStart);
-const inpLines = oneLines.slice(iStart, iEnd);
-ok("输入块有 3 行", inpLines.length, 3, 1e-12);
-// values begin after the label padding + a 3-space gutter; the label itself
-// never contains 3 consecutive spaces, so the first such run marks the gutter
-const startCols = inpLines.map(l => dispWidth(l.slice(0, l.search(/ {3}/) + 3)));
-ok("输入列对齐（值起始列一致）", new Set(startCols).size, 1, 1e-12);
+ok("单条含提示",     one.includes("- 按 0.1 mg"), true);
+ok("输入用冒号不用补空格", one.includes("摩尔质量 M：58.44 g/mol"), true);
+// no run of 2+ spaces may appear inside an input line: that would be padding,
+// which cannot align when CJK advance width is not an integer multiple
+const inpLines2 = one.split(NL).filter(l => l.includes("："));
+ok("输入块有 3 行",  inpLines2.length, 3, 1e-12);
+ok("输入行无补齐空格",
+   inpLines2.every(l => !/\S {2,}\S/.test(l)), true);
 
 const tbl = formatRecord(r2, 2);
 ok("表格含表头",     tbl.includes("目标浓度"), true);
 ok("表格含数据行",   tbl.includes("500 µL"), true);
-const tblRows = tbl.split(NL).filter(l => /^ {4}\d  /.test(l));
-ok("表格数据行等宽", new Set(tblRows.map(l => dispWidth(l))).size, 1, 1e-12);
+ok("表格用 | 分隔",  tbl.includes("1  |  5 mM  |  500 µL  |  9.5 mL"), true);
+const tblRows = tbl.split(NL).filter(l => l.includes("|"));
+ok("表头+2 数据行",  tblRows.length, 3, 1e-12);
+ok("单元格无补齐空格",
+   tblRows.every(l => l.split("|").every(c => !/\S {2,}\S/.test(c))), true);
 
 const doc = formatRecords([r1, r2], new Date(2026,9,6,16,45).getTime());
 ok("导出含标题",     doc.includes("配液台 · 实验记录"), true);
 ok("导出含条数",     doc.includes("共 2 条"), true);
-ok("导出含两条记录", doc.includes("1. 配制溶液") && doc.includes("2. 梯度稀释"), true);
+ok("导出含两条记录", doc.includes("[1] 配制溶液") && doc.includes("[2] 梯度稀释"), true);
 ok("导出含安全声明", doc.includes("pH 计实测"), true);
 ok("空记录不报错",   formatRecords([], Date.now()).includes("还没有记录"), true);
 
