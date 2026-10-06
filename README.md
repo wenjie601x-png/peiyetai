@@ -1,5 +1,7 @@
 # 配液台
 
+**线上：https://peiyetai.netlify.app** · 手机免登录直接开，Safari「添加到主屏幕」可当 App 用。
+
 电化学实验的溶液配制计算器 —— 稀释、称量、单位换算、缓冲液按 pH 配、标准曲线梯度稀释、
 分子量解析、电化学公式。所有输入自带单位下拉，不用先把 µL 换成 L、mM 换成 mol/L。
 
@@ -39,6 +41,15 @@ Davies 校正 pKa₂' = 6.83 → pH = 7.59        差 0.19
 ```
 python build.py     # src/ → index.html（单文件自包含）
 node test.mjs       # 110 条断言，跑的是 src/core.js，即实际发布的那份代码
+```
+
+改完重新发布：
+
+```
+python build.py
+node test.mjs                      # 必须全过再发
+netlify deploy --prod --dir .
+git add -A && git commit -m "..." && git push
 ```
 
 - `src/core.js` —— 纯计算层，无 DOM 依赖，是唯一放公式的地方
