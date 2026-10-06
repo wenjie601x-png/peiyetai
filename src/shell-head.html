@@ -275,6 +275,43 @@ table.data .em{color:var(--accent); font-weight:600}
 .lib-item .fm .mw{color:var(--accent)}
 .lib-item .no{font-size:12px; color:var(--warn); margin-top:3px}
 
+
+/* ---------- records ----------------------------------------------------- */
+.card-head{display:flex; align-items:center; gap:10px; margin-bottom:13px}
+.card-head h3{margin:0; flex:1}
+.rec-row{margin-top:14px; padding-top:13px; border-top:1px solid var(--border);
+  display:flex; justify-content:flex-end}
+.rec-btn{font-family:var(--mono)}
+.rec-btn.bad{border-color:var(--danger); color:var(--danger)}
+.rail button .badge{
+  display:inline-block; margin-left:7px; min-width:19px; padding:0 5px;
+  border-radius:100px; background:var(--accent); color:var(--accent-ink);
+  font-family:var(--mono); font-size:11px; line-height:17px; text-align:center;
+  font-weight:600; vertical-align:middle;
+}
+.rail button[aria-current="true"] .badge{background:var(--accent-ink); color:var(--accent)}
+.rec-item{border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:10px;
+  overflow:hidden}
+.rec-item:last-child{margin-bottom:0}
+.rec-item-head{display:flex; align-items:center; gap:10px; padding:9px 12px;
+  background:var(--surface-2); border-bottom:1px solid var(--border)}
+.rec-n{font-family:var(--mono); font-size:12px; color:var(--accent-ink);
+  background:var(--accent); border-radius:100px; min-width:20px; height:20px;
+  line-height:20px; text-align:center; font-weight:600}
+.rec-mod{flex:1; font-size:13.5px; color:var(--ink); font-weight:500}
+.rec-t{font-family:var(--mono); font-size:11.5px; color:var(--muted); white-space:nowrap}
+.rec-body, .rec-pre{
+  margin:0; padding:12px; font-family:var(--mono); font-size:12px; line-height:1.6;
+  color:var(--ink-2); white-space:pre; overflow-x:auto; background:var(--surface);
+  tab-size:4;
+}
+.rec-pre{border:1px solid var(--border); border-radius:var(--radius-sm);
+  background:var(--surface-2); max-height:420px; overflow-y:auto}
+@media (max-width:600px){
+  .rec-item-head{flex-wrap:wrap}
+  .rec-mod{flex:1 1 100%; order:3}
+}
+
 /* ---------- misc -------------------------------------------------------- */
 .row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end}
 .row > *{flex:1 1 130px; min-width:0}

@@ -144,11 +144,14 @@ function mkField(spec) {
 }
 
 /* ---------- result card -------------------------------------------------- */
-function mkResult() {
+function mkResult(moduleName) {
   const host = h("div", { class: "result" });
-  return {
+  const api = {
     node: host,
+    moduleName: moduleName || "",
+    last: null,
     show(o) {
+      api.last = o && !o.error ? o : null;
       host.innerHTML = "";
       if (o.error) {
         host.appendChild(h("div", { class: "cap" }, "结果"));
@@ -178,8 +181,12 @@ function mkResult() {
       }
       (o.notes || []).forEach(n => host.appendChild(mkNote(n)));
       (o.extra || []).forEach(n => host.appendChild(n));
+      if (api.onRecord) {
+        host.appendChild(h("div", { class: "rec-row" }, recButton(api.onRecord)));
+      }
     }
   };
+  return api;
 }
 function mkNote(n) {
   if (typeof n === "string") n = { text: n };
@@ -209,6 +216,130 @@ function libButton(onPick) {
     onclick: e => { e.preventDefault(); openLib(onPick); } }, "试剂库");
 }
 
+
+/* ---------- record store -------------------------------------------------
+   Lab records accumulate across calculations and survive reload. Every
+   browser-storage access is wrapped: private windows and thumbnailers throw. */
+const REC_KEY = "peiye.records";
+let RECORDS = [];
+try {
+  const raw = localStorage.getItem(REC_KEY);
+  if (raw) RECORDS = JSON.parse(raw) || [];
+} catch (e) { RECORDS = []; }
+if (!Array.isArray(RECORDS)) RECORDS = [];
+
+const recListeners = [];
+function recSave() {
+  try { localStorage.setItem(REC_KEY, JSON.stringify(RECORDS)); } catch (e) {}
+  recListeners.forEach(fn => { try { fn(); } catch (e) {} });
+}
+function recAdd(rec) {
+  rec.id = String(Date.now()) + Math.random().toString(36).slice(2, 7);
+  rec.t = Date.now();
+  RECORDS.push(rec);
+  recSave();
+}
+function recRemove(id) {
+  const i = RECORDS.findIndex(r => r.id === id);
+  if (i >= 0) { RECORDS.splice(i, 1); recSave(); }
+}
+function recClear() { RECORDS = []; recSave(); }
+
+/** innerHTML in a note/say → plain text for the record. */
+function plain(html) {
+  if (html == null) return "";
+  const d = document.createElement("div");
+  d.innerHTML = String(html);
+  return (d.textContent || "").replace(/\s+/g, " ").trim();
+}
+
+/** A "记一笔" button bound to a function that builds the record object. */
+function recButton(build, label) {
+  const b = h("button", { class: "lib-btn rec-btn", type: "button" }, label || "记一笔");
+  b.addEventListener("click", () => {
+    let rec;
+    try { rec = build(); } catch (e) { rec = null; }
+    if (!rec) { flash(b, "没有可记录的结果", true); return; }
+    recAdd(rec);
+    flash(b, "已记录 ✓");
+    bumpRailBadge();
+  });
+  return b;
+}
+function flash(btn, text, bad) {
+  const old = btn.textContent;
+  btn.textContent = text;
+  btn.classList.toggle("bad", !!bad);
+  setTimeout(() => { btn.textContent = old; btn.classList.remove("bad"); }, 1400);
+}
+
+/** Build a record from whatever the result card last rendered. */
+function stdRecord(res, moduleName, inputsFn) {
+  return () => {
+    const last = res.last;
+    if (!last) return null;
+    const result = (last.dim != null && isFinite(last.base))
+      ? C.auto(last.base, last.dim).text
+      : (typeof last.big === "string" ? last.big : "");
+    return {
+      module: moduleName,
+      inputs: inputsFn ? inputsFn() : [],
+      formula: last.expr || "",
+      formulaSubs: [last.subs, last.tail].filter(Boolean).join("\n    "),
+      result: result,
+      say: plain(last.say),
+      notes: (last.notes || [])
+        .map(n => plain(typeof n === "string" ? n : (n && n.text)))
+        .filter(Boolean)
+    };
+  };
+}
+/** Read a DOM table back out as {head, rows} for the record. */
+function grabTable(tbl) {
+  if (!tbl) return null;
+  const head = Array.from(tbl.querySelectorAll("thead th")).map(t => t.innerText.trim());
+  const rows = Array.from(tbl.querySelectorAll("tbody tr"))
+    .map(tr => Array.from(tr.querySelectorAll("td")).map(td => td.innerText.trim()));
+  return (head.length && rows.length) ? { head, rows } : null;
+}
+
+/* ---------- copy / download ---------------------------------------------- */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    // clipboard API needs a secure context and permission; fall back
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;top:-1000px;left:-1000px;opacity:0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e2) { return false; }
+  }
+}
+function downloadText(text, filename) {
+  try {
+    const blob = new Blob(["﻿" + text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return true;
+  } catch (e) { return false; }
+}
+function stampFile() {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
 /* ===========================================================================
    MODULES
    ========================================================================= */
@@ -220,7 +351,7 @@ mod({ id: "prep", group: "配液", name: "配制", title: "配制溶液 · 称�
   desc: "m = M · C · V。填三个，第四个自动算。摩尔质量可以从试剂库一键取，也可以在「分子量」页用化学式算。",
   build(root) {
     let unknown = "m";
-    const res = mkResult();
+    const res = mkResult("配制溶液 · 称取质量");
     const recalc = () => run();
     const F = {
       M: mkField({ key:"M", label:"摩尔质量", sym:"M", dim:"molar", unit:"g/mol",
@@ -285,6 +416,9 @@ mod({ id: "prep", group: "配液", name: "配制", title: "配制溶液 · 称�
         res.show({ error: humanize(e.message, F) });
       }
     }
+    res.onRecord = stdRecord(res, "配制溶液 · 称取质量",
+      () => ["M","C","V","m"].map(k =>
+        [F[k].spec.label + (F[k].spec.sym ? " " + F[k].spec.sym : ""), F[k].text()]));
     drawSeg(); sync();
     root.appendChild(h("div", { class: "cols" },
       h("div", null,
@@ -303,7 +437,7 @@ mod({ id: "dilute", group: "配液", name: "稀释", title: "稀释 · C₁V₁ 
   desc: "母液和目标液四个量，填三个算第四个。单位随便填 µL / mL / L、µM / mM / M，不用先换算。",
   build(root) {
     let unknown = "V1";
-    const res = mkResult();
+    const res = mkResult("稀释 · C1V1 = C2V2");
     const recalc = () => run();
     const F = {
       C1: mkField({ key:"C1", label:"母液浓度", sym:"C₁", dim:"conc", unit:"M",
@@ -355,6 +489,9 @@ mod({ id: "dilute", group: "配液", name: "稀释", title: "稀释 · C₁V₁ 
         res.show({ error: humanize(e.message, F) });
       }
     }
+    res.onRecord = stdRecord(res, "稀释 · C1V1 = C2V2",
+      () => ["C1","V1","C2","V2"].map(k =>
+        [F[k].spec.label + " " + F[k].spec.sym, F[k].text()]));
     drawSeg(); sync();
     root.appendChild(h("div", { class: "cols" },
       h("div", { class: "card" }, seg, h("div", { class: "fields" },
@@ -463,7 +600,18 @@ mod({ id: "series", group: "配液", name: "标准曲线", title: "梯度稀释 
         gBox,
         h("div", { class:"tiny", style:"margin-top:9px" },
           "等比适合跨几个数量级的标定（检出限到饱和）；等差适合窄范围线性段。生成后仍可手动改。")),
-      h("div", { class: "card" }, h("h3", null, "配制表"), out)));
+      h("div", { class: "card" },
+        h("div", { class:"card-head" },
+          h("h3", null, "配制表"),
+          recButton(() => {
+            const t = grabTable(out.querySelector("table.data"));
+            if (!t) return null;
+            return { module: "梯度稀释 · 标准曲线", tableTitle: "配制表", table: t,
+              inputs: [["母液浓度", Cs.text()], ["每点终体积", Vf.text()],
+                       ["方式", mode === "serial" ? "逐级稀释" : "直接稀释"]],
+              notes: Array.from(out.querySelectorAll(".note")).map(n => plain(n.innerHTML)) };
+          })),
+        out)));
     run();
   }});
 
@@ -471,7 +619,7 @@ mod({ id: "series", group: "配液", name: "标准曲线", title: "梯度稀释 
 mod({ id: "liquid", group: "配液", name: "液体试剂", title: "浓酸 / 液体试剂",
   desc: "瓶子上只有密度和质量分数，先换算成 mol/L，再算要取多少。质量分数按 w/w（主流标法），和密度是配套的。",
   build(root) {
-    const resA = mkResult(), resB = mkResult();
+    const resA = mkResult("液体试剂 · 原瓶浓度"), resB = mkResult("液体试剂 · 配制取量");
     const recalc = () => { runA(); runB(); };
     let isAcid = true, pickedName = "浓硫酸";   // the prefilled rho/w/M
     const rho = mkField({ key:"rho", label:"密度", sym:"ρ", dim:null, suffix:"g/mL",
@@ -523,6 +671,16 @@ mod({ id: "liquid", group: "配液", name: "液体试剂", title: "浓酸 / 液�
           notes });
       } catch (e) { resB.show({ error:e.message }); }
     }
+    resA.onRecord = stdRecord(resA, "液体试剂 · 原瓶浓度", () => [
+      ["试剂", pickedName || "（未从试剂库选取）"],
+      ["密度 ρ", rho.input.value + " g/mL"],
+      ["质量分数 w", w.input.value + " %"],
+      ["摩尔质量 M", Mm.text()]]);
+    resB.onRecord = stdRecord(resB, "液体试剂 · 配制取量", () => [
+      ["试剂", pickedName || "（未从试剂库选取）"],
+      ["原瓶浓度 C1", isFinite(stock) ? C.auto(stock,"conc").text : "—"],
+      ["目标浓度 C2", C2.text()],
+      ["目标体积 V2", V2.text()]]);
     root.appendChild(h("div", null,
       h("div", { class:"cols" },
         h("div", { class:"card" },
@@ -541,7 +699,7 @@ mod({ id: "liquid", group: "配液", name: "液体试剂", title: "浓酸 / 液�
 mod({ id: "weigh", group: "配液", name: "称量回算", title: "称量回算",
   desc: "天平上很难刚好停在目标值。填实际称到的质量，马上知道按原体积定容浓度变成多少，或者要定容到多少才正好。",
   build(root) {
-    const res = mkResult();
+    const res = mkResult("称量回算");
     const recalc = () => run();
     const Mm = mkField({ key:"M", label:"摩尔质量", sym:"M", dim:"molar", unit:"g/mol",
       placeholder:"58.44", value:"58.44", onchange:recalc,
@@ -578,6 +736,9 @@ mod({ id: "weigh", group: "配液", name: "称量回算", title: "称量回算",
           ]});
       } catch (e) { res.show({ error:e.message }); }
     }
+    res.onRecord = stdRecord(res, "称量回算", () => [
+      ["摩尔质量 M", Mm.text()], ["目标浓度 C_目标", Ct.text()],
+      ["计划定容体积 V_目标", Vt.text()], ["实际称到 m_实际", ma.text()]]);
     root.appendChild(h("div", { class:"cols" },
       h("div", { class:"card" }, h("div", { class:"fields" },
         Mm.node, Ct.node, Vt.node, ma.node)),
@@ -710,7 +871,27 @@ mod({ id: "buffer", group: "配液", name: "缓冲液", title: "缓冲液 · 按
                 "背景盐会显著拉高离子强度，进而改变表观 pKa，所以填了才算得准。"))),
           // the recipe is the primary output — keep it ahead of the pKa card
           // in source order so it comes first when the grid collapses to one column
-          h("div", { class:"card" }, h("h3", null, "配制表"), out)),
+          h("div", { class:"card" },
+            h("div", { class:"card-head" },
+              h("h3", null, "配制表"),
+              recButton(() => {
+                const t = grabTable(out.querySelector("table.data"));
+                if (!t) return null;
+                const last = res.last;
+                return { module: "缓冲液 · " + C.BUFFERS[sysKey].name,
+                  tableTitle: "配制表", table: t,
+                  inputs: [["目标 pH", pH.input.value], ["使用温度", T.input.value + " °C"],
+                           ["缓冲总浓度", Ct.text()], ["配制体积", Vf.text()],
+                           ["另加 NaCl", nacl.text()], ["另加 KCl", kcl.text()],
+                           ["活度校正", davies ? "Davies（已开）" : "关闭"]],
+                  formula: last ? last.expr : "",
+                  formulaSubs: last
+                    ? [last.subs, last.tail].filter(Boolean).join("\n    ") : "",
+                  say: last ? plain(last.say) : "",
+                  notes: (last && last.notes ? last.notes : [])
+                    .map(n => plain(typeof n === "string" ? n : (n && n.text))).filter(Boolean) };
+              })),
+            out)),
         res.node)));
     run();
   }});
@@ -719,7 +900,7 @@ mod({ id: "buffer", group: "配液", name: "缓冲液", title: "缓冲液 · 按
 mod({ id: "mass", group: "工具", name: "分子量", title: "分子量 · 试剂库",
   desc: "支持嵌套括号和结晶水：CuSO4·5H2O、K3[Fe(CN)6]、Na2HPO4·12H2O。结晶水会算进去 —— 这是配液最常见的坑。",
   build(root) {
-    const res = mkResult();
+    const res = mkResult("分子量");
     const bd = h("div");
     const f = mkField({ key:"f", label:"化学式", dim:null, value:"CuSO4·5H2O",
       placeholder:"K3[Fe(CN)6]", onchange:() => run(),
@@ -760,6 +941,7 @@ mod({ id: "mass", group: "工具", name: "分子量", title: "分子量 · 试�
         res.show({ error:e.message });
       }
     }
+    res.onRecord = stdRecord(res, "分子量", () => [["化学式", f.input.value.trim()]]);
     root.appendChild(h("div", { class:"cols" },
       h("div", null,
         h("div", { class:"card" }, h("div", { class:"fields" }, f.node), chips),
@@ -1036,8 +1218,104 @@ mod({ id: "echem", group: "工具", name: "电化学", title: "电化学计算",
           h("div", { style:"margin-top:12px" }, covOut)),
         h("div", { class:"card" }, h("h3", null, "灵敏度与检出限"),
           h("div", { class:"fields" }, lodS.node, lodSig.node),
-          h("div", { style:"margin-top:12px" }, lodOut)))));
+          h("div", { style:"margin-top:12px" }, lodOut))),
+      h("div", { class:"card" },
+        h("div", { class:"card-head" },
+          h("h3", null, "把这一屏电化学结果记一笔"),
+          recButton(() => {
+            // .big renders the number and the unit as adjacent spans with no
+            // whitespace between them; rejoin them with a real space
+            const grab = el => {
+              const b = el.querySelector(".big");
+              if (!b) return null;
+              const u = b.querySelector(".u");
+              if (!u) return b.innerText.replace(/\s+/g, " ").trim();
+              const num = Array.from(b.childNodes).filter(n => n !== u)
+                .map(n => n.textContent).join("").replace(/\s+/g, " ").trim();
+              return (num + " " + u.textContent.trim()).trim();
+            };
+            const rows = [
+              ["电极面积 A", C.sig(Acm2, 4) + " cm²"],
+              ["电流密度 j", grab(jOut)],
+              ["Cottrell i(t)", grab(cotOut)],
+              ["Randles-Sevcik", grab(rsOut)],
+              ["表面覆盖度 Γ", grab(covOut)],
+              ["检出限 LOD", grab(lodOut)]
+            ].filter(r => r[1]);
+            if (!rows.length) return null;
+            return { module: "电化学计算",
+              inputs: [["电极形状", shape === "disc" ? "圆盘" : shape === "rect" ? "矩形" : "环状"],
+                       ["电子数 n", rsN.input.value], ["扫速 v", rsV.text()],
+                       ["扩散系数 D", rsD.text()], ["体相浓度 C", rsC.text()]],
+              tableTitle: "结果", table: { head: ["项目", "数值"], rows: rows },
+              notes: ["Randles-Sevcik 式中 C 已按 mol/cm3 代入（= 浓度 / 1000）。",
+                      "电极面积为几何面积，粗糙/多孔电极的活性面积需另行标定。"] };
+          })))));
     areaRun(); lodRun();
+  }});
+
+
+/* ---- 10. 实验记录 -------------------------------------------------------- */
+mod({ id: "records", group: "记录", name: "实验记录", title: "实验记录",
+  desc: "每个模块的结果卡下面都有「记一笔」。攒好之后在这里一次性复制或导出成 .txt，直接贴进实验记录本。记录存在这台设备的浏览器里，刷新和关页面都不会丢。",
+  build(root) {
+    const list = h("div");
+    const bar = h("div", { class: "chiprow", style: "margin-bottom:14px" });
+    const preview = h("pre", { class: "rec-pre" });
+
+    const copyBtn = h("button", { class: "chip", type: "button" }, "复制全部");
+    copyBtn.addEventListener("click", async () => {
+      if (!RECORDS.length) { flash(copyBtn, "还没有记录", true); return; }
+      const ok = await copyText(C.formatRecords(RECORDS, Date.now()));
+      flash(copyBtn, ok ? "已复制 ✓" : "复制失败，请手动选中下方文本", !ok);
+    });
+    const dlBtn = h("button", { class: "chip", type: "button" }, "下载 .txt");
+    dlBtn.addEventListener("click", () => {
+      if (!RECORDS.length) { flash(dlBtn, "还没有记录", true); return; }
+      const ok = downloadText(C.formatRecords(RECORDS, Date.now()),
+                              "配液记录-" + stampFile() + ".txt");
+      flash(dlBtn, ok ? "已下载 ✓" : "此环境不允许下载，请用「复制全部」", !ok);
+    });
+    const clrBtn = h("button", { class: "chip", type: "button" }, "清空");
+    let armed = false;
+    clrBtn.addEventListener("click", () => {
+      if (!RECORDS.length) { flash(clrBtn, "本来就是空的", true); return; }
+      if (!armed) { armed = true; flash(clrBtn, "再点一次确认清空", true);
+                    setTimeout(() => { armed = false; }, 2000); return; }
+      recClear(); armed = false; render();
+    });
+    bar.appendChild(copyBtn); bar.appendChild(dlBtn); bar.appendChild(clrBtn);
+
+    function render() {
+      list.innerHTML = "";
+      if (!RECORDS.length) {
+        list.appendChild(h("div", { class: "note" },
+          "还没有记录。去任一模块算一次，点结果下面的「记一笔」。"));
+        preview.textContent = "";
+        return;
+      }
+      RECORDS.forEach((r, i) => {
+        const del = h("button", { class: "lib-btn", type: "button" }, "删除");
+        del.addEventListener("click", () => { recRemove(r.id); render(); });
+        list.appendChild(h("div", { class: "rec-item" },
+          h("div", { class: "rec-item-head" },
+            h("span", { class: "rec-n" }, String(i + 1)),
+            h("span", { class: "rec-mod" }, r.module),
+            h("span", { class: "rec-t" }, C.stamp(r.t)),
+            del),
+          h("pre", { class: "rec-body" }, C.formatRecord(r, i + 1))));
+      });
+      preview.textContent = C.formatRecords(RECORDS, Date.now());
+    }
+    recListeners.push(render);
+    root.appendChild(h("div", null,
+      h("div", { class: "card" }, bar,
+        h("div", { class: "tiny" },
+          "「复制全部」在任何环境都能用；「下载 .txt」在 peiyetai.netlify.app 上可用，" +
+          "在 claude.ai 的 Artifact 链接里会被沙箱挡掉（那里请用复制）。")),
+      h("div", { class: "card" }, h("h3", null, "记录条目"), list),
+      h("div", { class: "card" }, h("h3", null, "导出预览"), preview)));
+    render();
   }});
 
 /* ===========================================================================
@@ -1067,6 +1345,15 @@ MODULES.forEach(m => {
     h("div", { class: "panel-head" }, h("h2", null, m.title), h("p", null, m.desc)));
   main.appendChild(panel);
 });
+
+function bumpRailBadge() {
+  const b = rail.querySelector('button[data-id="records"]');
+  if (!b) return;
+  let dot = b.querySelector(".badge");
+  if (!RECORDS.length) { if (dot) dot.remove(); return; }
+  if (!dot) { dot = h("span", { class: "badge" }); b.appendChild(dot); }
+  dot.textContent = String(RECORDS.length);
+}
 
 function show(id) {
   current = id;
@@ -1100,6 +1387,9 @@ $("themeBtn").addEventListener("click", () => {
   theme = theme === "auto" ? "light" : theme === "light" ? "dark" : "auto";
   applyTheme(theme);
 });
+
+bumpRailBadge();
+recListeners.push(bumpRailBadge);
 
 let start = "prep";
 try { const s = localStorage.getItem("peiye.tab"); if (s && MODULES.some(m => m.id === s)) start = s; } catch (e) {}

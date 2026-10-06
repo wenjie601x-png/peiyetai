@@ -784,6 +784,123 @@ const REAGENTS = [
   { g:"修饰材料 / 酶", n:"乳酸氧化酶", en:"LOx", f:null, note:"按活性 U/mg 配，不走摩尔质量" }
 ];
 
+/* ---------- 10. plain-text record formatting -----------------------------
+   Records are what the user exports to their lab notebook. Alignment has to
+   account for CJK glyphs being two columns wide in a monospace font,
+   otherwise the columns shear apart in Notepad.                            */
+const WIDE = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/;
+function dispWidth(s) {
+  let w = 0;
+  for (const ch of String(s == null ? "" : s)) w += WIDE.test(ch) ? 2 : 1;
+  return w;
+}
+function padTo(s, n) {
+  s = String(s == null ? "" : s);
+  const gap = n - dispWidth(s);
+  return gap > 0 ? s + " ".repeat(gap) : s;
+}
+function rule(ch, n) { return ch.repeat(Math.max(0, n)); }
+
+function stamp(ms) {
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + " " +
+         p(d.getHours()) + ":" + p(d.getMinutes());
+}
+
+/* Characters that must never begin a line (CJK 行首禁则). Breaking before a
+   closing bracket or a full stop is what makes wrapped Chinese look broken. */
+const NO_LINE_START = "。，、；：？！…·）】》」』〉｝”’%,.;:?!)]}>";
+/** Wrap a long string at `cols` display columns, respecting 行首禁则. */
+function wrapCols(t, cols) {
+  const out = [];
+  let cur = "";
+  for (const ch of String(t)) {
+    const over = cur && dispWidth(cur + ch) > cols;
+    // let a forbidden-at-start char overhang rather than orphan it on the next line
+    if (over && NO_LINE_START.indexOf(ch) < 0) { out.push(cur); cur = ""; }
+    cur += ch;
+  }
+  if (cur) out.push(cur);
+  // continuation lines never keep the space the break landed on
+  return (out.length ? out : [""]).map((seg, i) => i ? seg.replace(/^ +/, "") : seg);
+}
+
+/** One record as plain text. `n` is its 1-based position in the export. */
+function formatRecord(rec, n) {
+  const L = [];
+  const title = n + ". " + rec.module;
+  L.push("--- " + title + " " + rule("-", Math.max(3, 62 - dispWidth(title) - 5)));
+  L.push("    " + stamp(rec.t));
+
+  if (rec.inputs && rec.inputs.length) {
+    L.push("");
+    L.push("  输入");
+    const w = Math.max.apply(null, rec.inputs.map(r => dispWidth(r[0])));
+    rec.inputs.forEach(r => L.push("    " + padTo(r[0], w) + "   " + r[1]));
+  }
+  if (rec.formula) {
+    L.push("");
+    L.push("  计算");
+    L.push("    " + rec.formula);
+    if (rec.formulaSubs) L.push("    " + rec.formulaSubs);
+    if (rec.result) L.push("    = " + rec.result);
+  } else if (rec.result) {
+    L.push("");
+    L.push("  结果  " + rec.result);
+  }
+  if (rec.table && rec.table.head && rec.table.rows && rec.table.rows.length) {
+    L.push("");
+    if (rec.tableTitle) L.push("  " + rec.tableTitle);
+    const all = [rec.table.head].concat(rec.table.rows);
+    const cols = rec.table.head.length;
+    const w = [];
+    for (let c = 0; c < cols; c++)
+      w.push(Math.max.apply(null, all.map(r => dispWidth(r[c] == null ? "" : r[c]))));
+    const line = r => ("    " + r.map((v, c) => padTo(v == null ? "" : v, w[c])).join("  "))
+                        .replace(/\s+$/, "");
+    L.push(line(rec.table.head));
+    L.push("    " + rule("-", w.reduce((a, b) => a + b, 0) + (cols - 1) * 2));
+    rec.table.rows.forEach(r => L.push(line(r)));
+  }
+  if (rec.say) {
+    L.push("");
+    L.push("  说明");
+    wrapCols(rec.say, 56).forEach(seg => L.push("    " + seg));
+  }
+  if (rec.notes && rec.notes.length) {
+    L.push("");
+    L.push("  提示");
+    rec.notes.forEach(t => wrapCols(t, 56).forEach((seg, i) =>
+      L.push("    " + (i === 0 ? "! " : "  ") + seg)));
+  }
+  return L.join("\n");
+}
+
+/** The whole export document. */
+function formatRecords(recs, nowMs) {
+  const now = nowMs == null ? Date.now() : nowMs;
+  const head = [
+    rule("=", 62),
+    "  配液台 · 实验记录",
+    "  导出于 " + stamp(now) + "    共 " + recs.length + " 条",
+    rule("=", 62),
+    ""
+  ];
+  if (!recs.length) return head.concat(["  （还没有记录）", ""]).join("\n");
+  const foot = [
+    "",
+    rule("-", 62),
+    "摩尔质量按 IUPAC 2021 标准原子量。",
+    "缓冲液配比为理论值（已含 Davies 活度校正），残余误差 ±0.1-0.2 pH，",
+    "配好必须用 pH 计实测、用 HCl / NaOH 微调。浓酸稀释一律酸入水。",
+    "由 配液台 生成  https://peiyetai.netlify.app"
+  ];
+  return head.concat([recs.map((r, i) => formatRecord(r, i + 1)).join("\n\n")])
+             .concat(foot).join("\n");
+}
+
+
 /* ---------- 9. exports ---------------------------------------------------- */
 return {
   ATOMIC, DIMS, REAGENTS, BUFFERS, F_CONST, RS_CONST,
@@ -792,6 +909,7 @@ return {
   dilution, prep, moles, stockFromLiquid, weighBack, weighError,
   ladder, series,
   logGamma, speciate, buffer, predictPH,
+  dispWidth, padTo, stamp, wrapCols, formatRecord, formatRecords,
   electrodeArea, randlesSevcik, cottrell, coverage, chargeToMoles,
   currentDensity, detectionLimit
 };

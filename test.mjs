@@ -213,6 +213,66 @@ ok("回算该定容到 (L)",     wb.V_needed, 2.54/(58.44*0.866666666667), 1e-9)
 ok("天平 0.1 mg 在 10 mg 上 = 1 %", weighError(0.010, 0.1).relative, 1, 1e-9);
 ok("天平 0.1 mg 在 1 mg 上 = 10 %", weighError(0.001, 0.1).relative, 10, 1e-9);
 
+/* ---- 7. record formatting ---------------------------------------------- */
+section("7. 实验记录文本格式");
+const NL = String.fromCharCode(10);
+const { dispWidth, padTo, formatRecord, formatRecords, wrapCols } = CORE;
+ok("CJK 宽度 = 2",        dispWidth("配制"), 4, 1e-12);
+ok("ASCII 宽度 = 1",      dispWidth("mM"), 2, 1e-12);
+ok("混排宽度",            dispWidth("体积V"), 5, 1e-12);
+ok("padTo 按显示宽度对齐", dispWidth(padTo("摩尔质量", 12)), 12, 1e-12);
+ok("padTo 不截断超长",     padTo("摩尔质量ABC", 4), "摩尔质量ABC");
+ok("wrapCols 不丢字符",
+   wrapCols("甲乙丙丁戊己庚辛壬癸", 6).join("").length, 10, 1e-12);
+// 行首禁则：标点不能被甩到下一行开头
+const wrapped = wrapCols("定容到 50 mL 的话，真实浓度是 101.5 mM。", 18);
+ok("wrapCols 标点不落行首",
+   wrapped.slice(1).every(l => "。，、；：？！）".indexOf(l[0]) < 0), true);
+ok("wrapCols 续行无前导空格",
+   wrapped.slice(1).every(l => !/^ /.test(l)), true);
+ok("wrapCols 内容无损",
+   wrapped.join("").replace(/ /g, ""),
+   "定容到50mL的话，真实浓度是101.5mM。");
+
+const r1 = { t: new Date(2026,9,6,16,20).getTime(), module: "配制溶液 · 称取质量",
+  inputs: [["摩尔质量 M","58.44 g/mol"],["目标浓度 C","10 mM"],["配制体积 V","50 mL"]],
+  formula: "m = M · C · V", formulaSubs: "M 58.44 g/mol · C 10 mM · V 50 mL",
+  result: "29.22 mg", say: "称 29.22 mg，溶解后定容到 50 mL。",
+  notes: ["按 0.1 mg 分度值，称 29.22 mg 的相对误差约 0.34 %。"] };
+const r2 = { t: new Date(2026,9,6,16,22).getTime(), module: "梯度稀释",
+  tableTitle: "配制表",
+  table: { head: ["#","目标浓度","取样体积","加稀释液"],
+           rows: [["1","5 mM","500 µL","9.5 mL"],["2","1 mM","100 µL","9.9 mL"]] } };
+
+const one = formatRecord(r1, 1);
+ok("单条含模块名",   one.includes("1. 配制溶液 · 称取质量"), true);
+ok("单条含公式",     one.includes("m = M · C · V"), true);
+ok("单条含结果",     one.includes("= 29.22 mg"), true);
+ok("单条含提示",     one.includes("! 按 0.1 mg"), true);
+// scope strictly to the 输入 block: the lines between "  输入" and the next blank
+const oneLines = one.split(NL);
+const iStart = oneLines.indexOf("  输入") + 1;
+const iEnd = oneLines.indexOf("", iStart);
+const inpLines = oneLines.slice(iStart, iEnd);
+ok("输入块有 3 行", inpLines.length, 3, 1e-12);
+// values begin after the label padding + a 3-space gutter; the label itself
+// never contains 3 consecutive spaces, so the first such run marks the gutter
+const startCols = inpLines.map(l => dispWidth(l.slice(0, l.search(/ {3}/) + 3)));
+ok("输入列对齐（值起始列一致）", new Set(startCols).size, 1, 1e-12);
+
+const tbl = formatRecord(r2, 2);
+ok("表格含表头",     tbl.includes("目标浓度"), true);
+ok("表格含数据行",   tbl.includes("500 µL"), true);
+const tblRows = tbl.split(NL).filter(l => /^ {4}\d  /.test(l));
+ok("表格数据行等宽", new Set(tblRows.map(l => dispWidth(l))).size, 1, 1e-12);
+
+const doc = formatRecords([r1, r2], new Date(2026,9,6,16,45).getTime());
+ok("导出含标题",     doc.includes("配液台 · 实验记录"), true);
+ok("导出含条数",     doc.includes("共 2 条"), true);
+ok("导出含两条记录", doc.includes("1. 配制溶液") && doc.includes("2. 梯度稀释"), true);
+ok("导出含安全声明", doc.includes("pH 计实测"), true);
+ok("空记录不报错",   formatRecords([], Date.now()).includes("还没有记录"), true);
+
 /* ---- summary ------------------------------------------------------------ */
 console.log(`\n${"─".repeat(60)}\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
