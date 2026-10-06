@@ -1,0 +1,2258 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="电化学实验配液计算器">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Ctext y=%2226%22 font-size=%2226%22%3E%F0%9F%A7%AA%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<title>配液台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* ---------- tokens: light is the bare :root, dark redefined twice -------- */
+:root{
+  --bg:#F2F6F5; --surface:#FFFFFF; --surface-2:#E9EFEE; --surface-3:#DFE8E6;
+  --border:#D3DEDC; --border-strong:#B6C6C3;
+  --ink:#0E1A19; --ink-2:#364946; --muted:#647976;
+  --accent:#0B6A66; --accent-ink:#FFFFFF; --accent-soft:#D9EBE9; --accent-line:#8FC4C0;
+  --warn:#8A5705; --warn-soft:#FBEFD9; --warn-line:#DEB871;
+  --danger:#9C2F27; --danger-soft:#FAE6E3; --danger-line:#DFA49D;
+  --shadow:0 1px 2px rgba(14,26,25,.06), 0 8px 24px -12px rgba(14,26,25,.18);
+  --radius:10px; --radius-sm:7px;
+  --sans:"Archivo","Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"IBM Plex Mono","Cascadia Mono",ui-monospace,"PingFang SC","Microsoft YaHei",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C1312; --surface:#121C1B; --surface-2:#182422; --surface-3:#1F2D2B;
+    --border:#263634; --border-strong:#38504D;
+    --ink:#E4EDEB; --ink-2:#B5C6C3; --muted:#829996;
+    --accent:#52BFB6; --accent-ink:#04201F; --accent-soft:#17312F; --accent-line:#2E605C;
+    --warn:#E0A94E; --warn-soft:#2E2412; --warn-line:#5E4A20;
+    --danger:#E8897E; --danger-soft:#301916; --danger-line:#5E312B;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C1312; --surface:#121C1B; --surface-2:#182422; --surface-3:#1F2D2B;
+  --border:#263634; --border-strong:#38504D;
+  --ink:#E4EDEB; --ink-2:#B5C6C3; --muted:#829996;
+  --accent:#52BFB6; --accent-ink:#04201F; --accent-soft:#17312F; --accent-line:#2E605C;
+  --warn:#E0A94E; --warn-soft:#2E2412; --warn-line:#5E4A20;
+  --danger:#E8897E; --danger-soft:#301916; --danger-line:#5E312B;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--sans); font-size:15px; line-height:1.5;
+  -webkit-text-size-adjust:100%;
+}
+h1,h2,h3{margin:0; text-wrap:balance; font-weight:600; letter-spacing:-.01em}
+button,input,select{font:inherit; color:inherit}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+
+/* ---------- shell ------------------------------------------------------- */
+.app{max-width:1180px; margin:0 auto; padding:0 16px 72px}
+
+header.top{
+  display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+  padding:22px 0 16px; border-bottom:1px solid var(--border); margin-bottom:18px;
+}
+header.top h1{font-size:19px; letter-spacing:-.02em}
+header.top .sub{color:var(--muted); font-size:13px; flex:1 1 220px}
+.theme-btn{
+  background:var(--surface); border:1px solid var(--border); color:var(--ink-2);
+  border-radius:var(--radius-sm); padding:6px 11px; cursor:pointer;
+  font-size:12.5px; font-family:var(--mono);
+}
+.theme-btn:hover{border-color:var(--border-strong); color:var(--ink)}
+
+.layout{display:grid; grid-template-columns:186px minmax(0,1fr); gap:26px; align-items:start}
+@media (max-width:860px){ .layout{grid-template-columns:minmax(0,1fr); gap:16px} }
+
+/* ---------- module rail ------------------------------------------------- */
+nav.rail{position:sticky; top:16px; display:flex; flex-direction:column; gap:3px}
+.rail-group{
+  font-size:10.5px; letter-spacing:.11em; 
+  color:var(--muted); font-weight:600; padding:14px 8px 5px;
+}
+.rail-group:first-child{padding-top:2px}
+.rail button{
+  display:block; width:100%; text-align:left; cursor:pointer;
+  background:none; border:0; border-radius:var(--radius-sm);
+  padding:7px 10px; font-size:14px; color:var(--ink-2);
+}
+.rail button:hover{background:var(--surface-2); color:var(--ink)}
+.rail button[aria-current="true"]{background:var(--accent); color:var(--accent-ink); font-weight:600}
+@media (max-width:860px){
+  nav.rail{
+    position:sticky; top:0; z-index:20; flex-direction:row; gap:4px; overflow-x:auto;
+    background:var(--bg); padding:8px 16px; margin:0 -16px;
+    border-bottom:1px solid var(--border); scrollbar-width:none;
+  }
+  nav.rail::-webkit-scrollbar{display:none}
+  .rail-group{display:none}
+  .rail button{width:auto; white-space:nowrap; padding:7px 13px; border:1px solid var(--border); background:var(--surface)}
+  .rail button[aria-current="true"]{border-color:var(--accent)}
+}
+
+/* ---------- panels ------------------------------------------------------ */
+.panel{display:none}
+.panel.on{display:block}
+.panel-head{margin-bottom:16px}
+.panel-head h2{font-size:17px}
+.panel-head p{margin:5px 0 0; color:var(--muted); font-size:13.5px; max-width:66ch}
+
+.cols{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,340px); gap:20px; align-items:start}
+@media (max-width:980px){ .cols{grid-template-columns:minmax(0,1fr)} }
+
+.card{
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:16px;
+}
+.card + .card{margin-top:14px}
+.card h3{
+  font-size:11px; letter-spacing:.1em; 
+  color:var(--muted); font-weight:600; margin-bottom:13px;
+}
+
+/* ---------- fields ------------------------------------------------------ */
+.fields{display:flex; flex-direction:column; gap:12px}
+.field{display:flex; flex-direction:column; gap:5px}
+.field > .lab{font-size:13px; color:var(--ink-2); display:flex; gap:7px; align-items:baseline}
+.field > .lab .sym{font-family:var(--mono); color:var(--accent); font-weight:500}
+.inrow{display:flex; gap:0}
+.inrow input{
+  flex:1 1 auto; min-width:0; background:var(--surface); color:var(--ink);
+  border:1px solid var(--border); border-right:0;
+  border-radius:var(--radius-sm) 0 0 var(--radius-sm);
+  padding:9px 11px; font-family:var(--mono); font-size:15px;
+  font-variant-numeric:tabular-nums;
+}
+.inrow input.solo{border-right:1px solid var(--border); border-radius:var(--radius-sm)}
+.inrow input:hover{border-color:var(--border-strong)}
+.inrow input:focus{outline:none; border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent)}
+.inrow select{
+  flex:0 0 auto; background:var(--surface-2); color:var(--ink-2);
+  border:1px solid var(--border); border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+  padding:9px 8px; font-family:var(--mono); font-size:13.5px; cursor:pointer;
+}
+.inrow select:hover{color:var(--ink)}
+.field.solved .inrow input{
+  background:var(--accent-soft); border-color:var(--accent-line);
+  color:var(--accent); font-weight:600; cursor:default;
+}
+.field.solved .inrow select{background:var(--accent-soft); border-color:var(--accent-line)}
+.hint{font-size:12px; color:var(--muted)}
+.hint code{font-family:var(--mono); font-size:11.5px}
+
+/* iOS Safari zooms the whole page when a focused control is under 16px, and
+   never zooms back out. Touch devices get 16px controls; pointer devices keep
+   the denser 15px/13.5px sizing. */
+@media (pointer:coarse){
+  .inrow input, .inrow select, .drawer-search input, .drawer-search input[type="search"]{
+    font-size:16px;
+  }
+  .inrow select{padding-inline:10px}
+}
+
+/* ---------- segmented solve-for selector -------------------------------- */
+.seg{display:flex; gap:0; margin-bottom:14px; flex-wrap:wrap}
+.seg .seg-lab{
+  font-size:11px; letter-spacing:.1em;  color:var(--muted);
+  font-weight:600; align-self:center; margin-right:10px;
+}
+.seg button{
+  background:var(--surface-2); border:1px solid var(--border); border-right-width:0;
+  padding:6px 13px; cursor:pointer; font-family:var(--mono); font-size:13px; color:var(--ink-2);
+}
+.seg button:first-of-type{border-radius:var(--radius-sm) 0 0 var(--radius-sm)}
+.seg button:last-of-type{border-radius:0 var(--radius-sm) var(--radius-sm) 0; border-right-width:1px}
+.seg button:hover{background:var(--surface-3); color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600}
+
+/* ---------- result card ------------------------------------------------- */
+.result{
+  background:var(--surface); border:1px solid var(--border);
+  border-top:2px solid var(--accent); border-radius:var(--radius);
+  padding:16px; position:sticky; top:16px;
+}
+@media (max-width:980px){ .result{position:static} }
+.result .cap{
+  font-size:11px; letter-spacing:.1em; 
+  color:var(--muted); font-weight:600;
+}
+.big{
+  font-family:var(--mono); font-size:30px; font-weight:600; letter-spacing:-.02em;
+  margin:8px 0 2px; color:var(--ink); line-height:1.15; overflow-wrap:anywhere;
+  font-variant-numeric:tabular-nums;
+}
+.big .u{font-size:19px; color:var(--muted); font-weight:500; margin-left:3px}
+.say{font-size:13.5px; color:var(--ink-2); margin-top:9px; line-height:1.55}
+.say b{color:var(--accent); font-family:var(--mono); font-weight:600}
+
+.work{
+  margin-top:14px; padding-top:13px; border-top:1px solid var(--border);
+  font-family:var(--mono); font-size:12.5px; color:var(--ink-2); line-height:1.75;
+  overflow-x:auto;
+}
+.work .eq{color:var(--ink); font-weight:500}
+.work .sb{color:var(--muted); display:block; white-space:nowrap}
+
+.equiv{margin-top:13px; padding-top:12px; border-top:1px solid var(--border)}
+.equiv table{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12.5px}
+.equiv td{padding:3px 0; font-variant-numeric:tabular-nums}
+.equiv td:first-child{color:var(--muted); width:7.5em}
+.equiv td:last-child{text-align:right; color:var(--ink-2)}
+
+/* ---------- notes / warnings -------------------------------------------- */
+.note{
+  border-radius:var(--radius-sm); padding:10px 12px; font-size:13px; line-height:1.55;
+  border:1px solid var(--border); background:var(--surface-2); color:var(--ink-2);
+  margin-top:12px;
+}
+.note.warn{background:var(--warn-soft); border-color:var(--warn-line); color:var(--warn)}
+.note.danger{background:var(--danger-soft); border-color:var(--danger-line); color:var(--danger)}
+.note.info{background:var(--accent-soft); border-color:var(--accent-line); color:var(--accent)}
+.note b{font-weight:600}
+.note code{font-family:var(--mono); font-size:12px}
+.note + .note{margin-top:8px}
+
+/* ---------- tables ------------------------------------------------------ */
+.tablewrap{overflow-x:auto; margin-top:4px}
+table.data{width:100%; border-collapse:collapse; font-size:13px}
+table.data th{
+  text-align:left; font-size:10.5px; letter-spacing:.08em; 
+  color:var(--muted); font-weight:600; padding:0 10px 7px 0; white-space:nowrap;
+  border-bottom:1px solid var(--border);
+}
+table.data td{
+  padding:8px 10px 8px 0; border-bottom:1px solid var(--border);
+  font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap;
+}
+table.data td:first-child{color:var(--muted)}
+table.data tr:last-child td{border-bottom:0}
+table.data tr.flag td{color:var(--warn)}
+table.data tr.blankrow td{color:var(--muted)}
+table.data .em{color:var(--accent); font-weight:600}
+
+/* ---------- reagent drawer ---------------------------------------------- */
+.lib-btn{
+  background:var(--surface-2); border:1px solid var(--border); color:var(--ink-2);
+  border-radius:var(--radius-sm); padding:5px 10px; cursor:pointer; font-size:12.5px;
+}
+.lib-btn:hover{border-color:var(--accent); color:var(--accent)}
+.scrim{
+  position:fixed; inset:0; background:rgba(8,16,15,.42); z-index:40;
+  display:none;
+}
+.scrim.on{display:block}
+.drawer{
+  position:fixed; top:0; right:0; bottom:0; width:min(420px,92vw); z-index:41;
+  background:var(--surface); border-left:1px solid var(--border);
+  display:none; flex-direction:column; box-shadow:var(--shadow);
+}
+.drawer.on{display:flex}
+.drawer-head{padding:16px 16px 12px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center}
+.drawer-head h3{font-size:14px; flex:1; text-transform:none; letter-spacing:0; color:var(--ink); margin:0}
+.drawer-head button{background:none; border:0; cursor:pointer; color:var(--muted); font-size:22px; line-height:1; padding:2px 6px}
+.drawer-head button:hover{color:var(--ink)}
+.drawer-search{padding:12px 16px; border-bottom:1px solid var(--border)}
+.drawer-search input{
+  width:100%; background:var(--surface-2); border:1px solid var(--border); color:var(--ink);
+  border-radius:var(--radius-sm); padding:9px 11px; font-size:14px;
+}
+.drawer-search input:focus{outline:none; border-color:var(--accent)}
+.drawer-list{overflow-y:auto; flex:1; padding:6px 0}
+.lib-group{
+  font-size:10.5px; letter-spacing:.1em;  color:var(--muted);
+  font-weight:600; padding:14px 16px 6px;
+}
+.lib-item{
+  display:block; width:100%; text-align:left; background:none; border:0; cursor:pointer;
+  padding:9px 16px; border-bottom:1px solid var(--border);
+}
+.lib-item:hover{background:var(--surface-2)}
+.lib-item .nm{font-size:13.5px; color:var(--ink)}
+.lib-item .fm{font-family:var(--mono); font-size:12px; color:var(--muted); margin-top:2px; display:flex; gap:10px; flex-wrap:wrap}
+.lib-item .fm .mw{color:var(--accent)}
+.lib-item .no{font-size:12px; color:var(--warn); margin-top:3px}
+
+/* ---------- misc -------------------------------------------------------- */
+.row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end}
+.row > *{flex:1 1 130px; min-width:0}
+.row > .shrink{flex:0 0 auto}
+.chiprow{display:flex; gap:6px; flex-wrap:wrap; margin-top:4px}
+.chip{
+  background:var(--surface-2); border:1px solid var(--border); color:var(--ink-2);
+  border-radius:100px; padding:4px 11px; cursor:pointer; font-size:12.5px; font-family:var(--mono);
+}
+.chip:hover{border-color:var(--accent); color:var(--accent)}
+.chip[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+.err{color:var(--danger); font-size:13.5px; line-height:1.55}
+.mono{font-family:var(--mono)}
+.tiny{font-size:12px; color:var(--muted); line-height:1.6}
+.breakdown{font-family:var(--mono); font-size:12.5px; width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
+.breakdown td{padding:3px 0; border-bottom:1px solid var(--border)}
+.breakdown td:nth-child(2),.breakdown td:nth-child(3){text-align:right; color:var(--ink-2)}
+.breakdown td:last-child{text-align:right; color:var(--muted); width:5em}
+label.check{display:flex; gap:8px; align-items:center; font-size:13px; color:var(--ink-2); cursor:pointer}
+label.check input{accent-color:var(--accent); width:16px; height:16px; cursor:pointer}
+footer.foot{
+  margin-top:34px; padding-top:16px; border-top:1px solid var(--border);
+  color:var(--muted); font-size:12px; line-height:1.7;
+}
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1>配液台</h1>
+    <span class="sub">电化学实验溶液配制 · 稀释 · 单位换算</span>
+    <button class="theme-btn" id="themeBtn" type="button">主题</button>
+  </header>
+
+  <div class="layout">
+    <nav class="rail" id="rail"></nav>
+    <main id="main"></main>
+  </div>
+
+  <footer class="foot">
+    摩尔质量按 IUPAC 2021 标准原子量计算。缓冲液配比为理论值，已按 Davies 式做活度校正，
+    但残余误差仍有 ±0.1–0.2 pH —— <b>配好必须用 pH 计实测，并用 HCl / NaOH 微调</b>。
+    浓酸稀释一律酸入水。
+  </footer>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="试剂库">
+  <div class="drawer-head">
+    <h3>试剂库</h3>
+    <button type="button" id="drawerClose" aria-label="关闭">&times;</button>
+  </div>
+  <div class="drawer-search">
+    <input type="search" id="libSearch" placeholder="搜名称、化学式或缩写…" autocomplete="off">
+  </div>
+  <div class="drawer-list" id="libList"></div>
+</aside>
+
+<script>
+
+/* ============================================================================
+   CORE — pure calculation layer for the electrochemistry solution calculator.
+   No DOM access. Tested headlessly under node (see test.mjs), then inlined
+   verbatim into the single-file HTML artifact.
+   ========================================================================== */
+const CORE = (() => {
+"use strict";
+
+/* ---------- 1. atomic weights --------------------------------------------
+   IUPAC 2021 standard atomic weights; conventional values for the elements
+   given as intervals, and the longest-lived-isotope mass number for those
+   with no stable nuclide.                                                   */
+const ATOMIC = {
+  H:1.008, He:4.002602, Li:6.94, Be:9.0121831, B:10.81, C:12.011, N:14.007,
+  O:15.999, F:18.998403162, Ne:20.1797, Na:22.98976928, Mg:24.305,
+  Al:26.9815384, Si:28.085, P:30.973761998, S:32.06, Cl:35.45, Ar:39.95,
+  K:39.0983, Ca:40.078, Sc:44.955907, Ti:47.867, V:50.9415, Cr:51.9961,
+  Mn:54.938043, Fe:55.845, Co:58.933194, Ni:58.6934, Cu:63.546, Zn:65.38,
+  Ga:69.723, Ge:72.630, As:74.921595, Se:78.971, Br:79.904, Kr:83.798,
+  Rb:85.4678, Sr:87.62, Y:88.905838, Zr:91.224, Nb:92.90637, Mo:95.95, Tc:98,
+  Ru:101.07, Rh:102.90549, Pd:106.42, Ag:107.8682, Cd:112.414, In:114.818,
+  Sn:118.710, Sb:121.760, Te:127.60, I:126.90447, Xe:131.293, Cs:132.90545196,
+  Ba:137.327, La:138.90547, Ce:140.116, Pr:140.90766, Nd:144.242, Pm:145,
+  Sm:150.36, Eu:151.964, Gd:157.249, Tb:158.925354, Dy:162.500, Ho:164.930329,
+  Er:167.259, Tm:168.934219, Yb:173.045, Lu:174.9668, Hf:178.486, Ta:180.94788,
+  W:183.84, Re:186.207, Os:190.23, Ir:192.217, Pt:195.084, Au:196.966570,
+  Hg:200.592, Tl:204.38, Pb:207.2, Bi:208.98040, Po:209, At:210, Rn:222,
+  Fr:223, Ra:226, Ac:227, Th:232.0377, Pa:231.03588, U:238.02891, Np:237,
+  Pu:244, Am:243, Cm:247, Bk:247, Cf:251, Es:252, Fm:257, Md:258, No:259,
+  Lr:266, Rf:267, Db:268, Sg:269, Bh:270, Hs:269, Mt:278, Ds:281, Rg:282,
+  Cn:285, Nh:286, Fl:289, Mc:290, Lv:293, Ts:294, Og:294
+};
+
+const SUBSCRIPTS = "₀₁₂₃₄₅₆₇₈₉";
+
+/* ---------- 2. formula parser --------------------------------------------
+   Handles nested ()/[]/{}, unicode subscripts, leading stoichiometric
+   coefficients, and hydrate dots (·, *, •, and a bare "." when it is clearly
+   a hydrate separator rather than a decimal point).                         */
+function parseFormula(raw) {
+  if (typeof raw !== "string") throw new Error("请输入化学式");
+  let s = raw.trim();
+  if (!s) throw new Error("请输入化学式");
+
+  s = s.replace(/\s+/g, "")
+       .replace(/[₀-₉]/g, d => String(SUBSCRIPTS.indexOf(d)))
+       .replace(/[•·・．。*xX×]/g, c =>
+          (c === "x" || c === "X") ? "x" : "·")
+       // a bare "." only separates a hydrate when digits+uppercase follow
+       .replace(/\.(?=\d*[A-Z])/g, "·")
+       // "CuSO4x5H2O" style written with a literal x
+       .replace(/x(?=\d*H2O)/g, "·");
+
+  const parts = s.split("·").filter(p => p !== "");
+  if (!parts.length) throw new Error("请输入化学式");
+
+  const counts = {};
+  for (const part of parts) {
+    const m = /^(\d+(?:\.\d+)?)?([\s\S]*)$/.exec(part);
+    const coef = m[1] ? parseFloat(m[1]) : 1;
+    const body = m[2];
+    if (!body) throw new Error("化学式不完整：" + part);
+    const sub = parseGroup(body);
+    for (const k in sub) counts[k] = (counts[k] || 0) + sub[k] * coef;
+  }
+  return counts;
+}
+
+function parseGroup(str) {
+  let i = 0;
+  const OPEN = { "(": ")", "[": "]", "{": "}" };
+  const CLOSE = { ")": 1, "]": 1, "}": 1 };
+
+  function readNumber() {
+    const m = /^\d+(?:\.\d+)?/.exec(str.slice(i));
+    if (!m) return 1;
+    i += m[0].length;
+    return parseFloat(m[0]);
+  }
+
+  function atoms(expectClose) {
+    const res = {};
+    while (i < str.length) {
+      const ch = str[i];
+      if (OPEN[ch]) {
+        const close = OPEN[ch];
+        i++;
+        const inner = atoms(close);
+        if (str[i] !== close) throw new Error("括号不匹配，缺少 " + close);
+        i++;
+        const n = readNumber();
+        for (const k in inner) res[k] = (res[k] || 0) + inner[k] * n;
+      } else if (CLOSE[ch]) {
+        if (expectClose) return res;
+        throw new Error("多余的右括号 " + ch);
+      } else if (/[A-Z]/.test(ch)) {
+        let sym = (/^[A-Z][a-z]{0,2}/.exec(str.slice(i)) || [""])[0];
+        while (sym.length > 1 && !(sym in ATOMIC)) sym = sym.slice(0, -1);
+        if (!(sym in ATOMIC)) throw new Error("未知元素：" + str.slice(i, i + 2));
+        i += sym.length;
+        const n = readNumber();
+        res[sym] = (res[sym] || 0) + n;
+      } else {
+        throw new Error("无法识别的字符：" + ch);
+      }
+    }
+    if (expectClose) throw new Error("括号不匹配，缺少 " + expectClose);
+    return res;
+  }
+
+  const out = atoms(null);
+  if (!Object.keys(out).length) throw new Error("化学式为空");
+  return out;
+}
+
+/** Molar mass in g/mol, plus the per-element breakdown used by the UI. */
+function molarMass(formula) {
+  const counts = parseFormula(formula);
+  let total = 0;
+  const rows = [];
+  for (const el in counts) {
+    const sub = ATOMIC[el] * counts[el];
+    total += sub;
+    rows.push({ element: el, count: counts[el], atomic: ATOMIC[el], subtotal: sub });
+  }
+  rows.sort((a, b) => b.subtotal - a.subtotal);
+  rows.forEach(r => { r.percent = total > 0 ? (r.subtotal / total) * 100 : 0; });
+  return { mass: total, rows, counts };
+}
+
+/* ---------- 3. units ------------------------------------------------------
+   Everything is stored internally in SI-ish base units:
+     mass g · volume L · concentration mol/L · amount mol · area cm²         */
+const U = "µ";                       // micro sign
+const DIMS = {
+  mass:     { base: "g",     units: [["ng",1e-9],[U+"g",1e-6],["mg",1e-3],["g",1],["kg",1e3]] },
+  volume:   { base: "L",     units: [["nL",1e-9],[U+"L",1e-6],["mL",1e-3],["L",1]] },
+  conc:     { base: "mol/L", units: [["nM",1e-9],[U+"M",1e-6],["mM",1e-3],["M",1]] },
+  amount:   { base: "mol",   units: [["nmol",1e-9],[U+"mol",1e-6],["mmol",1e-3],["mol",1]] },
+  molar:    { base: "g/mol", units: [["g/mol",1],["kg/mol",1e3]] },
+  massconc: { base: "g/L",   units: [[U+"g/L",1e-6],["mg/L",1e-3],["ppm",1e-3],[U+"g/mL",1e-3],["mg/mL",1],["g/L",1],["%(w/v)",10]] },
+  area:     { base: "cm²", units: [[U+"m²",1e-8],["mm²",1e-2],["cm²",1],["m²",1e4]] },
+  length:   { base: "cm",    units: [[U+"m",1e-4],["mm",0.1],["cm",1],["m",100]] },
+  current:  { base: "A",     units: [["pA",1e-12],["nA",1e-9],[U+"A",1e-6],["mA",1e-3],["A",1]] },
+  charge:   { base: "C",     units: [["nC",1e-9],[U+"C",1e-6],["mC",1e-3],["C",1]] },
+  rate:     { base: "V/s",   units: [["mV/s",1e-3],["V/s",1]] },
+  time:     { base: "s",     units: [["ms",1e-3],["s",1],["min",60],["h",3600]] },
+  density:  { base: "g/mL",  units: [["g/mL",1],["kg/m³",1e-3],["g/cm³",1]] },
+  diff:     { base: "cm²/s", units: [["cm²/s",1],["m²/s",1e4]] },
+  surfconc: { base: "mol/cm²", units: [["fmol/cm²",1e-15],["pmol/cm²",1e-12],["nmol/cm²",1e-9],[U+"mol/cm²",1e-6],["mol/cm²",1]] }
+};
+
+function factorOf(dim, unit) {
+  const d = DIMS[dim];
+  if (!d) throw new Error("未知量纲 " + dim);
+  const hit = d.units.find(u => u[0] === unit);
+  if (!hit) throw new Error("未知单位 " + unit + "（" + dim + "）");
+  return hit[1];
+}
+/** value in `unit` → base unit */
+const toBase = (v, dim, unit) => v * factorOf(dim, unit);
+/** base-unit value → `unit` */
+const fromBase = (v, dim, unit) => v / factorOf(dim, unit);
+
+/** The list entry with factor 1 — the canonical selectable unit for a dim.
+    Distinct from DIMS[dim].base, which is only a display label and may not
+    appear in the list at all (conc's base is "mol/L", its list has "M"). */
+function baseUnitName(dim) {
+  const list = DIMS[dim].units;
+  const one = list.find(u => u[1] === 1);
+  return one ? one[0] : list[list.length - 1][0];
+}
+
+/** Pick the unit that puts the magnitude in a readable range (≥1 preferred). */
+function pickUnit(baseValue, dim) {
+  const list = DIMS[dim].units
+    .filter(u => !/ppm|%|\(/.test(u[0]))          // skip aliases when auto-picking
+    .slice().sort((a, b) => b[1] - a[1]);
+  const av = Math.abs(baseValue);
+  if (!isFinite(av) || av === 0) return baseUnitName(dim);
+  for (const [name, f] of list) if (av / f >= 1) return name;
+  return list[list.length - 1][0];
+}
+
+/* ---------- 4. number formatting ----------------------------------------- */
+const SUPER = { "-":"⁻", "0":"⁰", "1":"¹", "2":"²", "3":"³",
+  "4":"⁴", "5":"⁵", "6":"⁶", "7":"⁷", "8":"⁸", "9":"⁹" };
+
+/** Round to `sig` significant figures and render without exponent noise. */
+function sig(x, n = 4) {
+  if (!isFinite(x)) return "—";
+  if (x === 0) return "0";
+  const av = Math.abs(x);
+  if (av >= 1e6 || av < 1e-4) {
+    const exp = Math.floor(Math.log10(av));
+    const mant = x / Math.pow(10, exp);
+    const e = String(exp).split("").map(c => SUPER[c] || c).join("");
+    return trimZeros(mant.toPrecision(n)) + "×10" + e;
+  }
+  const digits = Math.max(0, n - 1 - Math.floor(Math.log10(av)));
+  return trimZeros(x.toFixed(Math.min(digits, 12)));
+}
+function trimZeros(s) {
+  if (s.indexOf(".") < 0) return s;
+  return s.replace(/\.?0+$/, "");
+}
+/** "34.04 µL" — auto unit, for the headline result. */
+function auto(baseValue, dim, n = 4) {
+  const unit = pickUnit(baseValue, dim);
+  return { value: fromBase(baseValue, dim, unit), unit, text: sig(fromBase(baseValue, dim, unit), n) + " " + unit };
+}
+/** Every equivalent unit, for the strip under the headline. */
+function allUnits(baseValue, dim, n = 4) {
+  return DIMS[dim].units.map(([name, f]) => ({ unit: name, text: sig(baseValue / f, n) }));
+}
+
+/* ---------- 5. solvers ----------------------------------------------------
+   Each returns { value (base units), dim, expr } where expr is the formula
+   with the user's own numbers substituted — the auditable "worked line".    */
+function need(obj, keys) {
+  for (const k of keys) {
+    if (obj[k] === null || obj[k] === undefined || !isFinite(obj[k]))
+      throw new Error("请填写 " + k);
+    if (obj[k] < 0) throw new Error(k + " 不能为负");
+  }
+}
+function nonZero(obj, keys) {
+  for (const k of keys) if (obj[k] === 0) throw new Error(k + " 不能为 0");
+}
+
+/** C₁V₁ = C₂V₂ — solve for whichever of the four is unknown. */
+function dilution(p, unknown) {
+  const { C1, V1, C2, V2 } = p;
+  switch (unknown) {
+    case "C2": need(p, ["C1","V1","V2"]); nonZero(p, ["V2"]);
+      return { value: C1*V1/V2, dim: "conc",
+               expr: `C₂ = C₁V₁ / V₂` };
+    case "V2": need(p, ["C1","V1","C2"]); nonZero(p, ["C2"]);
+      return { value: C1*V1/C2, dim: "volume",
+               expr: `V₂ = C₁V₁ / C₂` };
+    case "C1": need(p, ["C2","V2","V1"]); nonZero(p, ["V1"]);
+      return { value: C2*V2/V1, dim: "conc",
+               expr: `C₁ = C₂V₂ / V₁` };
+    case "V1": need(p, ["C2","V2","C1"]); nonZero(p, ["C1"]);
+      return { value: C2*V2/C1, dim: "volume",
+               expr: `V₁ = C₂V₂ / C₁` };
+    default: throw new Error("未知求解目标 " + unknown);
+  }
+}
+
+/** m = M·C·V — solve for whichever of the four is unknown. */
+function prep(p, unknown) {
+  const { M, C, V, m } = p;
+  switch (unknown) {
+    case "m": need(p, ["M","C","V"]);
+      return { value: M*C*V, dim: "mass", expr: "m = M · C · V" };
+    case "C": need(p, ["M","V","m"]); nonZero(p, ["M","V"]);
+      return { value: m/(M*V), dim: "conc", expr: "C = m / (M · V)" };
+    case "V": need(p, ["M","C","m"]); nonZero(p, ["M","C"]);
+      return { value: m/(M*C), dim: "volume", expr: "V = m / (M · C)" };
+    case "M": need(p, ["C","V","m"]); nonZero(p, ["C","V"]);
+      return { value: m/(C*V), dim: "molar", expr: "M = m / (C · V)" };
+    default: throw new Error("未知求解目标 " + unknown);
+  }
+}
+
+/** n = m / M */
+function moles(p, unknown) {
+  const { m, M, n } = p;
+  switch (unknown) {
+    case "n": need(p, ["m","M"]); nonZero(p, ["M"]);
+      return { value: m/M, dim: "amount", expr: "n = m / M" };
+    case "m": need(p, ["n","M"]);
+      return { value: n*M, dim: "mass", expr: "m = n · M" };
+    case "M": need(p, ["m","n"]); nonZero(p, ["n"]);
+      return { value: m/n, dim: "molar", expr: "M = m / n" };
+    default: throw new Error("未知求解目标 " + unknown);
+  }
+}
+
+/** Neat concentration of a liquid reagent: C = 1000·ρ·w / M  (ρ g/mL, w frac) */
+function stockFromLiquid({ rho, w, M }) {
+  need({ rho, w, M }, ["rho","w","M"]); nonZero({ M }, ["M"]);
+  if (w > 1) throw new Error("质量分数请填 0–100 %");
+  return { value: 1000*rho*w/M, dim: "conc",
+           expr: "C = 1000 · ρ · w% / M" };
+}
+
+/** Weigh-back: you weighed m_actual instead of the target. */
+function weighBack({ M, m_actual, V_target, C_target }) {
+  need({ M, m_actual }, ["M","m_actual"]); nonZero({ M }, ["M"]);
+  const out = {};
+  if (isFinite(V_target) && V_target > 0) {
+    out.C_actual = m_actual/(M*V_target);
+    if (isFinite(C_target) && C_target > 0) {
+      out.deviation = (out.C_actual - C_target)/C_target*100;
+      out.m_target  = M*C_target*V_target;
+    }
+  }
+  if (isFinite(C_target) && C_target > 0) out.V_needed = m_actual/(M*C_target);
+  return out;
+}
+
+/** Balance readability: absolute error d on a mass m. */
+function weighError(m_base_g, d_mg) {
+  const d = d_mg*1e-3;
+  if (!(m_base_g > 0)) return null;
+  return { relative: d/m_base_g*100, d_mg };
+}
+
+/** Serial / direct dilution ladder for a calibration series. */
+function ladder({ Cstock, targets, Vfinal, mode }) {
+  if (!(Cstock > 0)) throw new Error("母液浓度必须大于 0");
+  if (!(Vfinal > 0)) throw new Error("每点终体积必须大于 0");
+  // a 0 point is a legitimate calibration blank — keep it, but it is pure
+  // diluent and never a link in a serial chain, so it always sorts last
+  const all = targets.filter(t => isFinite(t) && t >= 0).slice().sort((a,b) => b-a);
+  if (!all.length) throw new Error("请至少填一个目标浓度");
+  const list = all.filter(t => t > 0);
+  const hasBlank = all.length > list.length;
+  if (list.length && list[0] > Cstock)
+    throw new Error("最高目标浓度 (" + sig(list[0]*1000) + " mM) 超过母液浓度 ("
+                    + sig(Cstock*1000) + " mM)");
+
+  const rows = [];
+  if (mode === "serial") {
+    let from = Cstock, fromLabel = "母液";
+    for (let i = 0; i < list.length; i++) {
+      const Ci = list[i];
+      const Vtransfer = Ci*Vfinal/from;
+      rows.push({ index: i+1, target: Ci, from: fromLabel, fromC: from,
+                  Vtransfer, Vdiluent: Vfinal - Vtransfer, Vtotal: Vfinal,
+                  fold: from/Ci });
+      from = Ci; fromLabel = "第 " + (i+1) + " 级";
+    }
+    // each intermediate must hold its own final volume *plus* whatever the
+    // next stage draws off it
+    for (let i = 0; i < rows.length-1; i++) rows[i].Vneeded = Vfinal + rows[i+1].Vtransfer;
+    if (rows.length) rows[rows.length-1].Vneeded = Vfinal;
+  } else {
+    for (let i = 0; i < list.length; i++) {
+      const Ci = list[i];
+      const Vtransfer = Ci*Vfinal/Cstock;
+      rows.push({ index: i+1, target: Ci, from: "母液", fromC: Cstock,
+                  Vtransfer, Vdiluent: Vfinal - Vtransfer, Vtotal: Vfinal,
+                  Vneeded: Vfinal, fold: Cstock/Ci });
+    }
+  }
+  if (hasBlank)
+    rows.push({ index: rows.length+1, target: 0, from: "—", fromC: 0, blank: true,
+                Vtransfer: 0, Vdiluent: Vfinal, Vtotal: Vfinal, Vneeded: Vfinal, fold: Infinity });
+  return rows;
+}
+
+/** Equally spaced / log spaced target series. 0 is allowed as a linear blank. */
+function series({ lo, hi, n, kind }) {
+  if (!(n >= 2)) throw new Error("点数至少 2");
+  if (!(hi > 0)) throw new Error("最高浓度必须大于 0");
+  if (kind === "log" && !(lo > 0)) throw new Error("等比序列的最低浓度必须大于 0（0 点请用等差）");
+  if (!(lo >= 0)) throw new Error("浓度不能为负");
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const t = i/(n-1);
+    out.push(kind === "log" ? lo*Math.pow(hi/lo, t) : lo + (hi-lo)*t);
+  }
+  return out;
+}
+
+/* ---------- 6. buffers ----------------------------------------------------
+   General polyprotic treatment with Davies activity correction. pH is an
+   activity scale, so pairing the measured pH with concentration-based
+   apparent Ka' is the self-consistent combination.                          */
+const DAVIES_A = 0.509;                   // 25 °C, water
+function logGamma(z, I) {
+  if (!z) return 0;                       // neutral species: γ ≈ 1
+  const r = Math.sqrt(I);
+  return -DAVIES_A * z * z * (r/(1+r) - 0.3*I);
+}
+
+/**
+ * systems: fully protonated form carries `zmax`, `pKa` lists each successive
+ * deprotonation. Species j (j protons removed) has charge zmax − j.
+ */
+const BUFFERS = {
+  phosphate_na: {
+    name: "磷酸盐 (Na)", short: "PBS",
+    pKa: [2.15, 7.20, 12.35], dpKadT: [0, -0.0028, 0], zmax: 0, nH: 3,
+    range: [5.8, 8.0],
+    reagents: [
+      { key:"nah2po4",    label:"NaH₂PO₄ (无水)",        formula:"NaH2PO4",       j:1, counter:"Na⁺" },
+      { key:"nah2po4_2h", label:"NaH₂PO₄·2H₂O", formula:"NaH2PO4·2H2O",  j:1, counter:"Na⁺" },
+      { key:"na2hpo4",    label:"Na₂HPO₄ (无水)",        formula:"Na2HPO4",       j:2, counter:"Na⁺" },
+      { key:"na2hpo4_12h",label:"Na₂HPO₄·12H₂O",formula:"Na2HPO4·12H2O", j:2, counter:"Na⁺" },
+      { key:"na2hpo4_7h", label:"Na₂HPO₄·7H₂O", formula:"Na2HPO4·7H2O",  j:2, counter:"Na⁺" }
+    ],
+    defaultAcid: "nah2po4", defaultBase: "na2hpo4"
+  },
+  phosphate_k: {
+    name: "磷酸盐 (K)", short: "KPB",
+    pKa: [2.15, 7.20, 12.35], dpKadT: [0, -0.0028, 0], zmax: 0, nH: 3,
+    range: [5.8, 8.0],
+    reagents: [
+      { key:"kh2po4", label:"KH₂PO₄",  formula:"KH2PO4", j:1, counter:"K⁺" },
+      { key:"k2hpo4", label:"K₂HPO₄",  formula:"K2HPO4", j:2, counter:"K⁺" },
+      { key:"k2hpo4_3h", label:"K₂HPO₄·3H₂O", formula:"K2HPO4·3H2O", j:2, counter:"K⁺" }
+    ],
+    defaultAcid: "kh2po4", defaultBase: "k2hpo4"
+  },
+  tris: {
+    name: "Tris-HCl", short: "Tris",
+    pKa: [8.06], dpKadT: [-0.028], zmax: 1, nH: 1, range: [7.0, 9.0],
+    reagents: [
+      { key:"trishcl", label:"Tris·HCl",    formula:"C4H11NO3·HCl", j:0, counter:"Cl⁻" },
+      { key:"trisbase",label:"Tris base (游离碱)", formula:"C4H11NO3",     j:1, counter:null }
+    ],
+    defaultAcid: "trishcl", defaultBase: "trisbase",
+    titrant: { label:"HCl", direction:"acid" }
+  },
+  acetate: {
+    name: "醋酸盐", short: "AcO",
+    pKa: [4.76], dpKadT: [-0.0002], zmax: 0, nH: 1, range: [3.7, 5.8],
+    reagents: [
+      { key:"hac",     label:"醋酸 (冰醋酸)",            formula:"C2H4O2",       j:0, counter:null, liquid:{ rho:1.049, w:0.995 } },
+      { key:"naac",    label:"CH₃COONa (无水)",      formula:"C2H3O2Na",     j:1, counter:"Na⁺" },
+      { key:"naac_3h", label:"CH₃COONa·3H₂O", formula:"C2H3O2Na·3H2O", j:1, counter:"Na⁺" }
+    ],
+    defaultAcid: "hac", defaultBase: "naac_3h"
+  },
+  citrate: {
+    name: "柠檬酸盐", short: "Cit",
+    pKa: [3.13, 4.76, 6.40], dpKadT: [0, 0, 0], zmax: 0, nH: 3, range: [2.6, 7.4],
+    reagents: [
+      { key:"citric_h2o", label:"柠檬酸·H₂O",        formula:"C6H8O7·H2O",   j:0, counter:null },
+      { key:"citric",     label:"柠檬酸 (无水)",               formula:"C6H8O7",       j:0, counter:null },
+      { key:"nacit_2h",   label:"柠檬酸三钠·2H₂O",   formula:"C6H5O7Na3·2H2O", j:3, counter:"Na⁺" },
+      { key:"nacit",      label:"柠檬酸三钠 (无水)",           formula:"C6H5O7Na3",    j:3, counter:"Na⁺" }
+    ],
+    defaultAcid: "citric_h2o", defaultBase: "nacit_2h"
+  },
+  hepes: {
+    name: "HEPES", short: "HEPES",
+    pKa: [7.48], dpKadT: [-0.014], zmax: 0, nH: 1, range: [6.8, 8.2],
+    reagents: [
+      { key:"hepes_acid", label:"HEPES 游离酸", formula:"C8H18N2O4S",    j:0, counter:null },
+      { key:"hepes_na",   label:"HEPES 钠盐",   formula:"C8H17N2O4SNa",  j:1, counter:"Na⁺" }
+    ],
+    defaultAcid: "hepes_acid", defaultBase: "hepes_na",
+    titrant: { label:"NaOH", direction:"base" }
+  },
+  mes: {
+    name: "MES", short: "MES",
+    pKa: [6.15], dpKadT: [-0.011], zmax: 0, nH: 1, range: [5.5, 6.9],
+    reagents: [
+      { key:"mes_acid", label:"MES 游离酸",  formula:"C6H13NO4S",     j:0, counter:null },
+      { key:"mes_na",   label:"MES 钠盐",    formula:"C6H12NO4SNa",   j:1, counter:"Na⁺" }
+    ],
+    defaultAcid: "mes_acid", defaultBase: "mes_na",
+    titrant: { label:"NaOH", direction:"base" }
+  },
+  carbonate: {
+    name: "碳酸盐", short: "CO₃",
+    pKa: [6.35, 10.33], dpKadT: [-0.009, -0.009], zmax: 0, nH: 2, range: [9.2, 10.8],
+    reagents: [
+      { key:"nahco3", label:"NaHCO₃",        formula:"NaHCO3",  j:1, counter:"Na⁺" },
+      { key:"na2co3", label:"Na₂CO₃ (无水)", formula:"Na2CO3", j:2, counter:"Na⁺" }
+    ],
+    defaultAcid: "nahco3", defaultBase: "na2co3"
+  },
+  ammonia: {
+    name: "氨/铵", short: "NH₄",
+    pKa: [9.25], dpKadT: [-0.031], zmax: 1, nH: 1, range: [8.2, 10.2],
+    reagents: [
+      { key:"nh4cl", label:"NH₄Cl",      formula:"NH4Cl", j:0, counter:"Cl⁻" },
+      { key:"nh3",   label:"氨水 (NH₃)", formula:"NH3",   j:1, counter:null, liquid:{ rho:0.90, w:0.25 } }
+    ],
+    defaultAcid: "nh4cl", defaultBase: "nh3"
+  }
+};
+
+/** Species distribution at a given pH for one buffer system. */
+function speciate(sys, pH, I, T) {
+  const H = Math.pow(10, -pH);
+  const pKa = sys.pKa.map((p, k) =>
+    p + (sys.dpKadT[k] || 0) * (T - 25));
+  // activity-corrected: pKa'_k = pKa_k + log γ(z_k) − log γ(z_{k−1})
+  const pKaApp = pKa.map((p, k) => {
+    const zBefore = sys.zmax - k;         // species with k protons removed
+    const zAfter  = sys.zmax - (k + 1);
+    return p + logGamma(zAfter, I) - logGamma(zBefore, I);
+  });
+  const Ka = pKaApp.map(p => Math.pow(10, -p));
+
+  const n = sys.nH;
+  const terms = [];
+  let prod = 1;
+  for (let j = 0; j <= n; j++) {
+    if (j > 0) prod *= Ka[j-1];
+    terms.push(Math.pow(H, n-j) * prod);
+  }
+  const D = terms.reduce((a, b) => a + b, 0);
+  const f = terms.map(t => t / D);
+  let nbar = 0;
+  for (let j = 0; j <= n; j++) nbar += (n - j) * f[j];
+  return { f, nbar, pKaApp, pKa };
+}
+
+/**
+ * Recipe for a two-reagent buffer. Iterates ionic strength to self-consistency
+ * because pKa' depends on I, which depends on the speciation it produces.
+ */
+function buffer({ system, pH, Ctotal, Vfinal, acidKey, baseKey, T = 25,
+                  addNaCl = 0, addKCl = 0, davies = true }) {
+  const sys = BUFFERS[system];
+  if (!sys) throw new Error("未知缓冲体系 " + system);
+  if (!(Ctotal > 0)) throw new Error("总浓度必须大于 0");
+  if (!(Vfinal > 0)) throw new Error("终体积必须大于 0");
+  if (!isFinite(pH)) throw new Error("请填写目标 pH");
+
+  const acid = sys.reagents.find(r => r.key === (acidKey || sys.defaultAcid));
+  const base = sys.reagents.find(r => r.key === (baseKey || sys.defaultBase));
+  if (!acid || !base) throw new Error("请选择两种试剂");
+  const pA = sys.nH - acid.j, pB = sys.nH - base.j;   // protons each supplies
+  if (pA === pB) throw new Error("两种试剂必须处在不同质子化状态");
+
+  let I = davies ? 0.05 : 0, sp = null, x = 0, y = 0;
+  for (let iter = 0; iter < 60; iter++) {
+    sp = speciate(sys, pH, davies ? I : 0, T);
+    x = Ctotal * (sp.nbar - pB) / (pA - pB);          // mol/L of the acid form
+    y = Ctotal - x;
+    let Inew = 0;
+    for (let j = 0; j <= sys.nH; j++) {
+      const z = sys.zmax - j;
+      Inew += Ctotal * sp.f[j] * z * z;
+    }
+    const zA = sys.zmax - acid.j, zB = sys.zmax - base.j;
+    Inew += Math.max(x, 0) * Math.abs(zA) + Math.max(y, 0) * Math.abs(zB);
+    Inew = Inew / 2 + addNaCl + addKCl;
+    if (Math.abs(Inew - I) < 1e-9) { I = Inew; break; }
+    I = Inew;
+  }
+
+  // Which deprotonation steps does this reagent pair actually bracket? Those
+  // pKa' values set the usable window; outside pKa'±1 it is not a buffer.
+  const span = usableSpan(sys, acid, base, sp.pKaApp);
+  const warnings = [];
+  if (pH < span.lo - 2 || pH > span.hi + 2 || x < -1e-12 || y < -1e-12) {
+    throw new Error(
+      `${acid.label} / ${base.label} 配不出 pH ${sig(pH,3)}。这对试剂的有效范围约 ` +
+      `pH ${sig(span.lo - 2, 3)}–${sig(span.hi + 2, 3)}（pKa' ${span.list.map(v => sig(v,3)).join(" / ")}）。` +
+      `请换一对试剂或换缓冲体系。`);
+  }
+  if (pH < span.lo - 1 || pH > span.hi + 1)
+    warnings.push(`目标 pH 已接近该体系可用边界（pKa' ${span.list.map(v => sig(v,3)).join(" / ")}），` +
+                  `缓冲容量弱，少量酸碱污染就会让 pH 明显漂移。`);
+  if (davies && I > 0.2)
+    warnings.push(`离子强度算出来是 ${sig(I,3)} M，已超出 Davies 式标称的可靠区间（≲0.1 M，勉强可用到 ~0.5 M）。` +
+                  `校正方向仍然对，但数值误差会大于 ±0.1 pH。`);
+
+  const mkMass = (r, c) => {
+    const M = molarMass(r.formula).mass;
+    const mass = M * c * Vfinal;
+    const item = { reagent: r, M, conc: c, mass, moles: c * Vfinal };
+    // liquid reagents (glacial acetic acid, ammonia) get pipetted, not weighed
+    if (r.liquid) item.volume = mass / (r.liquid.rho * r.liquid.w) / 1000;   // L
+    return item;
+  };
+  const items = [mkMass(acid, x), mkMass(base, y)];
+  if (addNaCl > 0) items.push({ reagent:{ label:"NaCl", formula:"NaCl", extra:true },
+                                M: molarMass("NaCl").mass, conc: addNaCl,
+                                mass: molarMass("NaCl").mass*addNaCl*Vfinal, moles: addNaCl*Vfinal });
+  if (addKCl > 0) items.push({ reagent:{ label:"KCl", formula:"KCl", extra:true },
+                               M: molarMass("KCl").mass, conc: addKCl,
+                               mass: molarMass("KCl").mass*addKCl*Vfinal, moles: addKCl*Vfinal });
+
+  // the step this buffer actually rides on — the one whose pKa' is nearest pH
+  const ideal = speciate(sys, pH, 0, T);
+  const jLo = Math.min(acid.j, base.j), jHi = Math.max(acid.j, base.j);
+  let kNear = jLo;
+  for (let k = jLo; k < jHi; k++)
+    if (Math.abs(sp.pKaApp[k] - pH) < Math.abs(sp.pKaApp[kNear] - pH)) kNear = k;
+  kNear = Math.min(kNear, sp.pKaApp.length - 1);
+
+  return {
+    items, I, ratio: y > 0 ? x/y : Infinity, nbar: sp.nbar,
+    pKaApp: sp.pKaApp, pKaIdeal: ideal.pKaApp, pKaThermo: sys.pKa,
+    shift: sp.pKaApp[kNear] - ideal.pKaApp[kNear],
+    nearestIndex: kNear, span, acid, base, warnings, sys, T, davies,
+    fractions: sp.f, Ctotal, Vfinal, pH
+  };
+}
+
+/**
+ * The deprotonation steps a reagent pair brackets, and their apparent pKa.
+ * Acid form supplies pA protons, base form pB; the steps between them are the
+ * ones this pair can actually titrate, so their pKa' values bound the window.
+ */
+function usableSpan(sys, acid, base, pKaApp) {
+  const jLo = Math.min(acid.j, base.j), jHi = Math.max(acid.j, base.j);
+  const list = [];
+  for (let k = jLo; k < jHi; k++) list.push(pKaApp[k]);
+  if (!list.length) list.push(pKaApp[Math.min(jLo, pKaApp.length - 1)]);
+  return { lo: Math.min.apply(null, list), hi: Math.max.apply(null, list), list };
+}
+
+/** Predict the pH a given molar ratio will actually give (the PBS back-test). */
+function predictPH(system, { cAcid, cBase, acidKey, baseKey, T = 25,
+                             addNaCl = 0, addKCl = 0, davies = true }) {
+  const sys = BUFFERS[system];
+  const acid = sys.reagents.find(r => r.key === acidKey);
+  const base = sys.reagents.find(r => r.key === baseKey);
+  const Ctotal = cAcid + cBase;
+  const pA = sys.nH - acid.j, pB = sys.nH - base.j;
+  const targetNbar = (cAcid*pA + cBase*pB)/Ctotal;
+
+  let I = davies ? 0.05 : 0, pH = 7;
+  for (let iter = 0; iter < 80; iter++) {
+    let lo = 0, hi = 14;
+    for (let i = 0; i < 80; i++) {
+      const mid = (lo + hi)/2;
+      if (speciate(sys, mid, davies ? I : 0, T).nbar > targetNbar) lo = mid; else hi = mid;
+    }
+    pH = (lo + hi)/2;
+    const sp = speciate(sys, pH, davies ? I : 0, T);
+    let Inew = 0;
+    for (let j = 0; j <= sys.nH; j++) { const z = sys.zmax - j; Inew += Ctotal*sp.f[j]*z*z; }
+    Inew += cAcid*Math.abs(sys.zmax - acid.j) + cBase*Math.abs(sys.zmax - base.j);
+    Inew = Inew/2 + addNaCl + addKCl;
+    if (Math.abs(Inew - I) < 1e-10) { I = Inew; break; }
+    I = Inew;
+  }
+  return { pH, I };
+}
+
+/* ---------- 7. electrochemistry ------------------------------------------ */
+const F_CONST = 96485.332;                // C/mol
+const RS_CONST = 2.69e5;                  // Randles-Ševčík, 25 °C
+
+/** Disc / rectangle / ring geometric area, in cm². */
+function electrodeArea(shape, dims) {
+  switch (shape) {
+    case "disc": {
+      const d = dims.d;                   // cm
+      if (!(d > 0)) throw new Error("直径必须大于 0");
+      return { value: Math.PI*d*d/4, expr: "A = πd²/4" };
+    }
+    case "rect": {
+      const { w, h } = dims;
+      if (!(w > 0) || !(h > 0)) throw new Error("长宽必须大于 0");
+      return { value: w*h, expr: "A = w · h" };
+    }
+    case "ring": {
+      const { dOut, dIn } = dims;
+      if (!(dOut > 0) || !(dIn >= 0)) throw new Error("直径必须大于 0");
+      if (dIn >= dOut) throw new Error("内径必须小于外径");
+      return { value: Math.PI*(dOut*dOut - dIn*dIn)/4, expr: "A = π(dₒ² − dᵢ²)/4" };
+    }
+    default: throw new Error("未知电极形状");
+  }
+}
+
+/**
+ * Randles-Ševčík, reversible, 25 °C:
+ *   i_p = 2.69×10⁵ · n^1.5 · A · D^0.5 · C · v^0.5
+ * C MUST be mol/cm³ here, not mol/L — the factor-1000 trap. Callers pass C in
+ * mol/L (the app's base unit) and this converts internally.
+ */
+function randlesSevcik(p, unknown) {
+  const n = p.n, A = p.A, D = p.D, v = p.v;
+  const C = p.C !== undefined && p.C !== null ? p.C/1000 : null;  // mol/L → mol/cm³
+  const ip = p.ip;
+  const K = RS_CONST;
+  switch (unknown) {
+    case "ip": need({n,A,D,C,v},["n","A","D","C","v"]);
+      return { value: K*Math.pow(n,1.5)*A*Math.sqrt(D)*C*Math.sqrt(v), dim:"current",
+               expr: "iₚ = 2.69×10⁵ · n³ᐟ² · A · D¹ᐟ² · C · v¹ᐟ²" };
+    case "D": need({n,A,C,v,ip},["n","A","C","v","ip"]);
+      { const r = ip/(K*Math.pow(n,1.5)*A*C*Math.sqrt(v));
+        return { value: r*r, dim:"diff", expr: "D = [ iₚ / (2.69×10⁵ n³ᐟ² A C v¹ᐟ²) ]²" }; }
+    case "A": need({n,D,C,v,ip},["n","D","C","v","ip"]);
+      return { value: ip/(K*Math.pow(n,1.5)*Math.sqrt(D)*C*Math.sqrt(v)), dim:"area",
+               expr: "A = iₚ / (2.69×10⁵ n³ᐟ² D¹ᐟ² C v¹ᐟ²)" };
+    case "C": need({n,A,D,v,ip},["n","A","D","v","ip"]);
+      return { value: 1000*ip/(K*Math.pow(n,1.5)*A*Math.sqrt(D)*Math.sqrt(v)), dim:"conc",
+               expr: "C = iₚ / (2.69×10⁵ n³ᐟ² A D¹ᐟ² v¹ᐟ²)" };
+    default: throw new Error("未知求解目标 " + unknown);
+  }
+}
+
+/** Cottrell: i(t) = nFAD^½C / (π^½ t^½), C in mol/L → mol/cm³ internally. */
+function cottrell({ n, A, D, C, t }) {
+  need({ n, A, D, C, t }, ["n","A","D","C","t"]); nonZero({ t }, ["t"]);
+  const Ccm = C/1000;
+  return { value: n*F_CONST*A*Math.sqrt(D)*Ccm/(Math.sqrt(Math.PI)*Math.sqrt(t)),
+           dim: "current", expr: "i(t) = nFAD¹ᐟ²C / (π¹ᐟ² t¹ᐟ²)" };
+}
+
+/** Surface coverage Γ = Q / (nFA), mol/cm². */
+function coverage({ Q, n, A }) {
+  need({ Q, n, A }, ["Q","n","A"]); nonZero({ n, A }, ["n","A"]);
+  return { value: Q/(n*F_CONST*A), dim: "surfconc", expr: "Γ = Q / (nFA)" };
+}
+
+/** Faraday: n = Q / (zF). */
+function chargeToMoles({ Q, z }) {
+  need({ Q, z }, ["Q","z"]); nonZero({ z }, ["z"]);
+  return { value: Q/(z*F_CONST), dim: "amount", expr: "n = Q / (zF)" };
+}
+
+/** Current density j = i / A. */
+function currentDensity({ i, A }) {
+  need({ i, A }, ["i","A"]); nonZero({ A }, ["A"]);
+  return { value: i/A, expr: "j = i / A" };     // A/cm², formatted by caller
+}
+
+/** LOD = kσ/S. S in A per (mol/L); σ in A. Returns mol/L. */
+function detectionLimit({ S, sigma, k = 3 }) {
+  need({ S, sigma }, ["S","sigma"]); nonZero({ S }, ["S"]);
+  return { value: k*sigma/S, dim: "conc", expr: `LOD = ${k}σ / S` };
+}
+
+/* ---------- 8. reagent library ------------------------------------------- */
+const REAGENTS = [
+  // 支持电解质 / 缓冲盐
+  { g:"电解质 / 缓冲盐", n:"氯化钾", en:"KCl", f:"KCl" },
+  { g:"电解质 / 缓冲盐", n:"氯化钠", en:"NaCl", f:"NaCl" },
+  { g:"电解质 / 缓冲盐", n:"磷酸氢二钠 (无水)", en:"Na2HPO4", f:"Na2HPO4" },
+  { g:"电解质 / 缓冲盐", n:"磷酸氢二钠 十二水", en:"Na2HPO4·12H2O", f:"Na2HPO4·12H2O" },
+  { g:"电解质 / 缓冲盐", n:"磷酸二氢钠 (无水)", en:"NaH2PO4", f:"NaH2PO4" },
+  { g:"电解质 / 缓冲盐", n:"磷酸二氢钠 二水", en:"NaH2PO4·2H2O", f:"NaH2PO4·2H2O" },
+  { g:"电解质 / 缓冲盐", n:"磷酸二氢钾", en:"KH2PO4", f:"KH2PO4" },
+  { g:"电解质 / 缓冲盐", n:"磷酸氢二钾", en:"K2HPO4", f:"K2HPO4" },
+  { g:"电解质 / 缓冲盐", n:"Tris 游离碱", en:"Tris base", f:"C4H11NO3" },
+  { g:"电解质 / 缓冲盐", n:"Tris 盐酸盐", en:"Tris·HCl", f:"C4H11NO3·HCl" },
+  { g:"电解质 / 缓冲盐", n:"醋酸钠 三水", en:"CH3COONa·3H2O", f:"C2H3O2Na·3H2O" },
+  { g:"电解质 / 缓冲盐", n:"醋酸钠 (无水)", en:"CH3COONa", f:"C2H3O2Na" },
+  { g:"电解质 / 缓冲盐", n:"柠檬酸 一水", en:"Citric acid·H2O", f:"C6H8O7·H2O" },
+  { g:"电解质 / 缓冲盐", n:"柠檬酸三钠 二水", en:"Na3citrate·2H2O", f:"C6H5O7Na3·2H2O" },
+  { g:"电解质 / 缓冲盐", n:"HEPES 游离酸", en:"HEPES", f:"C8H18N2O4S" },
+  { g:"电解质 / 缓冲盐", n:"MES 游离酸", en:"MES", f:"C6H13NO4S" },
+  { g:"电解质 / 缓冲盐", n:"硫酸钠", en:"Na2SO4", f:"Na2SO4" },
+  { g:"电解质 / 缓冲盐", n:"硝酸钾", en:"KNO3", f:"KNO3" },
+  { g:"电解质 / 缓冲盐", n:"碳酸氢钠", en:"NaHCO3", f:"NaHCO3" },
+  { g:"电解质 / 缓冲盐", n:"氢氧化钠", en:"NaOH", f:"NaOH" },
+  { g:"电解质 / 缓冲盐", n:"氢氧化钾", en:"KOH", f:"KOH" },
+
+  // 氧化还原探针
+  { g:"氧化还原探针", n:"铁氰化钾 (赤血盐)", en:"K3[Fe(CN)6]", f:"K3[Fe(CN)6]" },
+  { g:"氧化还原探针", n:"亚铁氰化钾 三水", en:"K4[Fe(CN)6]·3H2O", f:"K4[Fe(CN)6]·3H2O" },
+  { g:"氧化还原探针", n:"六氨合氯化钌(III)", en:"Ru(NH3)6Cl3", f:"Ru(NH3)6Cl3" },
+  { g:"氧化还原探针", n:"二茂铁甲醇", en:"FcMeOH", f:"C11H12FeO" },
+  { g:"氧化还原探针", n:"对苯二酚", en:"Hydroquinone", f:"C6H6O2" },
+  { g:"氧化还原探针", n:"氯化铁 六水 (PB 前体)", en:"FeCl3·6H2O", f:"FeCl3·6H2O" },
+
+  // 浓液体试剂
+  { g:"浓液体试剂", n:"浓硫酸", en:"H2SO4", f:"H2SO4", rho:1.84, w:0.98, acid:true },
+  { g:"浓液体试剂", n:"浓盐酸", en:"HCl", f:"HCl", rho:1.18, w:0.37, acid:true },
+  { g:"浓液体试剂", n:"浓硝酸", en:"HNO3", f:"HNO3", rho:1.40, w:0.68, acid:true },
+  { g:"浓液体试剂", n:"高氯酸", en:"HClO4", f:"HClO4", rho:1.67, w:0.70, acid:true },
+  { g:"浓液体试剂", n:"磷酸", en:"H3PO4", f:"H3PO4", rho:1.69, w:0.85, acid:true },
+  { g:"浓液体试剂", n:"冰醋酸", en:"CH3COOH", f:"C2H4O2", rho:1.049, w:0.995, acid:true },
+  { g:"浓液体试剂", n:"过氧化氢 30%", en:"H2O2", f:"H2O2", rho:1.11, w:0.30 },
+  { g:"浓液体试剂", n:"戊二醛 25%", en:"Glutaraldehyde", f:"C5H8O2", rho:1.06, w:0.25 },
+  { g:"浓液体试剂", n:"氨水 25%", en:"NH3·H2O", f:"NH3", rho:0.90, w:0.25 },
+
+  // 分析物 / 干扰物
+  { g:"分析物 / 干扰物", n:"D-葡萄糖 (无水)", en:"D-Glucose", f:"C6H12O6" },
+  { g:"分析物 / 干扰物", n:"D-葡萄糖 一水", en:"D-Glucose·H2O", f:"C6H12O6·H2O" },
+  { g:"分析物 / 干扰物", n:"L-乳酸钠", en:"Sodium L-lactate", f:"C3H5O3Na" },
+  { g:"分析物 / 干扰物", n:"L-乳酸", en:"L-Lactic acid", f:"C3H6O3" },
+  { g:"分析物 / 干扰物", n:"丙酮酸钠", en:"Sodium pyruvate", f:"C3H3O3Na" },
+  { g:"分析物 / 干扰物", n:"L-谷氨酸钠 一水", en:"MSG·H2O", f:"C5H8NO4Na·H2O" },
+  { g:"分析物 / 干扰物", n:"L-谷氨酸", en:"L-Glutamic acid", f:"C5H9NO4" },
+  { g:"分析物 / 干扰物", n:"尿酸", en:"Uric acid", f:"C5H4N4O3" },
+  { g:"分析物 / 干扰物", n:"抗坏血酸 (VC)", en:"Ascorbic acid", f:"C6H8O6" },
+  { g:"分析物 / 干扰物", n:"多巴胺 盐酸盐", en:"Dopamine·HCl", f:"C8H11NO2·HCl" },
+  { g:"分析物 / 干扰物", n:"对乙酰氨基酚", en:"Acetaminophen", f:"C8H9NO2" },
+  { g:"分析物 / 干扰物", n:"尿素", en:"Urea", f:"CH4N2O" },
+
+  // 修饰材料 / 酶
+  { g:"修饰材料 / 酶", n:"牛血清白蛋白", en:"BSA", f:null, note:"≈66.5 kDa，按 mg/mL 配，不走摩尔质量" },
+  { g:"修饰材料 / 酶", n:"壳聚糖", en:"Chitosan", f:null, note:"聚合物，分子量按批次标，按 %(w/v) 配" },
+  { g:"修饰材料 / 酶", n:"Nafion 5% 分散液", en:"Nafion", f:null, note:"按 %(w/v) 稀释，不走摩尔质量" },
+  { g:"修饰材料 / 酶", n:"葡萄糖氧化酶", en:"GOx", f:null, note:"按活性 U/mg 配，不走摩尔质量" },
+  { g:"修饰材料 / 酶", n:"乳酸氧化酶", en:"LOx", f:null, note:"按活性 U/mg 配，不走摩尔质量" }
+];
+
+/* ---------- 9. exports ---------------------------------------------------- */
+return {
+  ATOMIC, DIMS, REAGENTS, BUFFERS, F_CONST, RS_CONST,
+  parseFormula, molarMass,
+  toBase, fromBase, factorOf, pickUnit, baseUnitName, sig, auto, allUnits,
+  dilution, prep, moles, stockFromLiquid, weighBack, weighError,
+  ladder, series,
+  logGamma, speciate, buffer, predictPH,
+  electrodeArea, randlesSevcik, cottrell, coverage, chargeToMoles,
+  currentDensity, detectionLimit
+};
+})();
+
+if (typeof module !== "undefined" && module.exports) module.exports = CORE;
+
+/* ============================================================================
+   UI layer. CORE (above) holds every calculation; nothing here does maths
+   beyond formatting and assembling the worked lines.
+   ========================================================================== */
+(function () {
+"use strict";
+const C = CORE;
+const $ = id => document.getElementById(id);
+
+function h(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  if (attrs) for (const k in attrs) {
+    if (k === "class") n.className = attrs[k];
+    else if (k === "html") n.innerHTML = attrs[k];
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
+    else if (attrs[k] !== null && attrs[k] !== undefined) n.setAttribute(k, attrs[k]);
+  }
+  for (const kid of kids.flat()) {
+    if (kid === null || kid === undefined || kid === false) continue;
+    n.appendChild(typeof kid === "string" ? document.createTextNode(kid) : kid);
+  }
+  return n;
+}
+const num = v => {
+  const s = String(v == null ? "" : v).replace(/[，,\s]/g, "").trim();
+  if (!s) return NaN;
+  const x = Number(s);
+  return isFinite(x) ? x : NaN;
+};
+/** Na2HPO4·12H2O → Na₂HPO₄·12H₂O (digits after a letter become subscripts) */
+const SUBS = "₀₁₂₃₄₅₆₇₈₉";
+function pretty(f) {
+  if (!f) return "";
+  return f.replace(/([A-Za-z\)\]])(\d+)/g,
+    (_, a, d) => a + d.split("").map(c => SUBS[+c]).join(""));
+}
+const esc = s => String(s).replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
+
+/* ---------- reagent drawer ----------------------------------------------- */
+let libTarget = null;
+const LIB = C.REAGENTS.map(r => {
+  let M = null;
+  if (r.f) { try { M = C.molarMass(r.f).mass; } catch (e) { M = null; } }
+  return Object.assign({}, r, { M });
+});
+function openLib(cb) {
+  libTarget = cb;
+  $("scrim").classList.add("on");
+  $("drawer").classList.add("on");
+  $("libSearch").value = "";
+  renderLib("");
+  $("libSearch").focus();
+}
+function closeLib() {
+  libTarget = null;
+  $("scrim").classList.remove("on");
+  $("drawer").classList.remove("on");
+}
+function renderLib(q) {
+  const list = $("libList");
+  list.innerHTML = "";
+  const needle = q.trim().toLowerCase();
+  const hits = LIB.filter(r => !needle ||
+    (r.n + " " + r.en + " " + (r.f || "") + " " + r.g).toLowerCase().includes(needle));
+  if (!hits.length) { list.appendChild(h("div", { class: "lib-group" }, "没有匹配的试剂")); return; }
+  let group = null;
+  for (const r of hits) {
+    if (r.g !== group) { group = r.g; list.appendChild(h("div", { class: "lib-group" }, group)); }
+    const meta = [];
+    if (r.f) meta.push(h("span", null, pretty(r.f)));
+    if (r.M) meta.push(h("span", { class: "mw" }, "M " + C.sig(r.M, 6) + " g/mol"));
+    if (r.rho) meta.push(h("span", null, "ρ " + r.rho + " g/mL · " + Math.round(r.w * 1000) / 10 + "%"));
+    list.appendChild(h("button", { class: "lib-item", type: "button",
+      onclick: () => { if (libTarget) libTarget(r); closeLib(); } },
+      h("div", { class: "nm" }, r.n + "  " + r.en),
+      meta.length ? h("div", { class: "fm" }, meta) : null,
+      r.note ? h("div", { class: "no" }, r.note) : null));
+  }
+}
+$("libSearch").addEventListener("input", e => renderLib(e.target.value));
+$("drawerClose").addEventListener("click", closeLib);
+$("scrim").addEventListener("click", closeLib);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeLib(); });
+
+/* ---------- field -------------------------------------------------------- */
+function mkField(spec) {
+  const input = h("input", { type: "text", inputmode: "decimal", autocomplete: "off",
+    placeholder: spec.placeholder || "", value: spec.value != null ? spec.value : "" });
+  let sel = null;
+  const row = h("div", { class: "inrow" }, input);
+  const units = spec.dim ? C.DIMS[spec.dim].units : null;
+  if (units && units.length > 1) {
+    sel = h("select", null, units.map(u => h("option", { value: u[0] }, u[0])));
+    sel.value = spec.unit || C.baseUnitName(spec.dim);
+    row.appendChild(sel);
+  } else {
+    input.classList.add("solo");
+    if (spec.suffix) {
+      sel = h("select", null, [h("option", { value: spec.suffix }, spec.suffix)]);
+      input.classList.remove("solo"); row.appendChild(sel);
+    }
+  }
+  const node = h("label", { class: "field" },
+    h("span", { class: "lab" },
+      h("span", null, spec.label),
+      spec.sym ? h("span", { class: "sym" }, spec.sym) : null,
+      spec.side || null),
+    row,
+    spec.hint ? h("span", { class: "hint", html: spec.hint }) : null);
+
+  const api = {
+    key: spec.key, dim: spec.dim, node, input, sel, spec,
+    getBase() {
+      const v = num(input.value);
+      if (!isFinite(v)) return NaN;
+      return spec.dim ? C.toBase(v, spec.dim, sel ? sel.value : C.baseUnitName(spec.dim)) : v;
+    },
+    getRaw() { return num(input.value); },
+    unit() { return sel ? sel.value : (spec.dim ? C.baseUnitName(spec.dim) : (spec.suffix || "")); },
+    text() {
+      const v = input.value.trim();
+      return v ? v + (api.unit() ? " " + api.unit() : "") : "—";
+    },
+    setBase(v) {
+      if (!isFinite(v)) { input.value = ""; return; }
+      if (spec.dim) {
+        const u = C.pickUnit(v, spec.dim);
+        if (sel) sel.value = u;
+        input.value = C.sig(C.fromBase(v, spec.dim, u), 5);
+      } else input.value = C.sig(v, 5);
+    },
+    setSolved(on) {
+      node.classList.toggle("solved", !!on);
+      input.readOnly = !!on;
+      input.tabIndex = on ? -1 : 0;
+      if (on) input.value = "";
+    },
+    clear() { input.value = ""; }
+  };
+  const fire = () => spec.onchange && spec.onchange();
+  input.addEventListener("input", fire);
+  if (sel) sel.addEventListener("change", fire);
+  return api;
+}
+
+/* ---------- result card -------------------------------------------------- */
+function mkResult() {
+  const host = h("div", { class: "result" });
+  return {
+    node: host,
+    show(o) {
+      host.innerHTML = "";
+      if (o.error) {
+        host.appendChild(h("div", { class: "cap" }, "结果"));
+        host.appendChild(h("div", { class: "err", style: "margin-top:8px" }, o.error));
+        (o.notes || []).forEach(n => host.appendChild(mkNote(n)));
+        return;
+      }
+      host.appendChild(h("div", { class: "cap" }, o.cap || "结果"));
+      if (o.big) {
+        const a = o.dim ? C.auto(o.base, o.dim, 4) : null;
+        host.appendChild(h("div", { class: "big" },
+          a ? C.sig(a.value, 4) : o.big,
+          a ? h("span", { class: "u" }, a.unit) : null));
+      }
+      if (o.say) host.appendChild(h("div", { class: "say", html: o.say }));
+      if (o.expr) {
+        host.appendChild(h("div", { class: "work" },
+          h("span", { class: "eq" }, o.expr),
+          o.subs ? h("span", { class: "sb" }, o.subs) : null,
+          o.tail ? h("span", { class: "sb" }, o.tail) : null));
+      }
+      if (o.dim && o.base != null && isFinite(o.base) && o.equiv !== false) {
+        host.appendChild(h("div", { class: "equiv" },
+          h("table", null, h("tbody", null,
+            C.allUnits(o.base, o.dim, 5).map(e =>
+              h("tr", null, h("td", null, e.unit), h("td", null, e.text)))))));
+      }
+      (o.notes || []).forEach(n => host.appendChild(mkNote(n)));
+      (o.extra || []).forEach(n => host.appendChild(n));
+    }
+  };
+}
+function mkNote(n) {
+  if (typeof n === "string") n = { text: n };
+  return h("div", { class: "note " + (n.kind || ""), html: n.text });
+}
+function segmented(label, opts, current, onPick) {
+  const wrap = h("div", { class: "seg" }, h("span", { class: "seg-lab" }, label));
+  opts.forEach(o => {
+    const b = h("button", { type: "button", "aria-pressed": String(o.key === current) },
+      o.label);
+    b.addEventListener("click", () => onPick(o.key));
+    wrap.appendChild(b);
+  });
+  return wrap;
+}
+/** CORE throws "请填写 C2"; swap the bare key for the field's own label. */
+function humanize(msg, F) {
+  return String(msg).replace(/(请填写|不能为负|不能为 0)?\s*([A-Za-z_]\w*)/g, (whole, pre, key) => {
+    const f = F && F[key];
+    if (!f) return whole;
+    const name = (f.spec.sym ? f.spec.sym + " " : "") + f.spec.label;
+    return (pre ? pre + " " : "") + name;
+  });
+}
+function libButton(onPick) {
+  return h("button", { class: "lib-btn", type: "button", style: "margin-left:auto",
+    onclick: e => { e.preventDefault(); openLib(onPick); } }, "试剂库");
+}
+
+/* ===========================================================================
+   MODULES
+   ========================================================================= */
+const MODULES = [];
+function mod(def) { MODULES.push(def); }
+
+/* ---- 1. 配制（固体 → 溶液） ------------------------------------------- */
+mod({ id: "prep", group: "配液", name: "配制", title: "配制溶液 · 称取质量",
+  desc: "m = M · C · V。填三个，第四个自动算。摩尔质量可以从试剂库一键取，也可以在「分子量」页用化学式算。",
+  build(root) {
+    let unknown = "m";
+    const res = mkResult();
+    const recalc = () => run();
+    const F = {
+      M: mkField({ key:"M", label:"摩尔质量", sym:"M", dim:"molar", unit:"g/mol",
+                   placeholder:"58.44", value:"58.44", onchange:recalc,
+                   side: libButton(r => {
+                     if (!r.M) { alert(r.n + "：" + (r.note || "没有摩尔质量")); return; }
+                     F.M.input.value = C.sig(r.M, 6); recalc();
+                   }) }),
+      C: mkField({ key:"C", label:"目标浓度", sym:"C", dim:"conc", unit:"mM",
+                   placeholder:"10", value:"10", onchange:recalc }),
+      V: mkField({ key:"V", label:"配制体积", sym:"V", dim:"volume", unit:"mL",
+                   placeholder:"50", value:"50", onchange:recalc }),
+      m: mkField({ key:"m", label:"称取质量", sym:"m", dim:"mass", unit:"mg",
+                   placeholder:"—", onchange:recalc })
+    };
+    const dBal = mkField({ key:"d", label:"天平分度值", dim:null, suffix:"mg",
+                           value:"0.1", onchange:recalc });
+    const seg = h("div");
+    const fieldsBox = h("div", { class: "fields" }, F.M.node, F.C.node, F.V.node, F.m.node);
+
+    function drawSeg() {
+      seg.innerHTML = "";
+      seg.appendChild(segmented("求解", [
+        { key:"m", label:"m 质量" }, { key:"C", label:"C 浓度" },
+        { key:"V", label:"V 体积" }, { key:"M", label:"M 分子量" }
+      ], unknown, k => { unknown = k; drawSeg(); sync(); run(); }));
+    }
+    function sync() { for (const k in F) F[k].setSolved(k === unknown); }
+
+    function run() {
+      const vals = {}; for (const k in F) vals[k] = F[k].getBase();
+      try {
+        const r = C.prep(vals, unknown);
+        F[unknown].setBase(r.value);
+        const used = { m:["M","C","V"], C:["M","V","m"], V:["M","C","m"], M:["C","V","m"] }[unknown];
+        const notes = [];
+        const mBase = unknown === "m" ? r.value : vals.m;
+        if (isFinite(mBase) && mBase > 0) {
+          const d = num(dBal.input.value);
+          const we = C.weighError(mBase, isFinite(d) ? d : 0.1);
+          if (we) {
+            const pct = we.relative;
+            const txt = `按 ${we.d_mg} mg 分度值，称 <b>${C.auto(mBase,"mass").text}</b> 的相对误差约 <b>${C.sig(pct,2)} %</b>。`;
+            if (pct > 5) notes.push({ kind:"danger", text: txt +
+              " 这个量太小，天平读数误差就有 5 % 以上 —— 先配高浓度母液，再按倍数稀释。" });
+            else if (pct > 1) notes.push({ kind:"warn", text: txt +
+              " 已经接近常规分析天平的可靠下限，建议配母液再稀释。" });
+            else notes.push({ kind:"", text: txt });
+          }
+        }
+        const sayMap = {
+          m: () => `称 <b>${C.auto(r.value,"mass").text}</b>，溶解后定容到 <b>${C.auto(vals.V,"volume").text}</b>。`,
+          C: () => `${C.auto(vals.m,"mass").text} 溶于 ${C.auto(vals.V,"volume").text}，浓度是 <b>${C.auto(r.value,"conc").text}</b>。`,
+          V: () => `把 ${C.auto(vals.m,"mass").text} 定容到 <b>${C.auto(r.value,"volume").text}</b> 才是 ${C.auto(vals.C,"conc").text}。`,
+          M: () => `反推出的摩尔质量是 <b>${C.sig(r.value,5)} g/mol</b>。`
+        };
+        res.show({ base: r.value, dim: r.dim, big: true, expr: r.expr,
+          subs: used.map(k => `${F[k].spec.sym} ${F[k].text()}`).join("   ·   "),
+          say: sayMap[unknown](), notes });
+      } catch (e) {
+        F[unknown].clear();
+        res.show({ error: humanize(e.message, F) });
+      }
+    }
+    drawSeg(); sync();
+    root.appendChild(h("div", { class: "cols" },
+      h("div", null,
+        h("div", { class: "card" }, seg, fieldsBox),
+        h("div", { class: "card" },
+          h("h3", null, "称量可行性"),
+          h("div", { class: "fields" }, dBal.node),
+          h("div", { class: "tiny", style:"margin-top:8px" },
+            "相对误差 = 分度值 ÷ 称取质量。常规分析天平 0.1 mg，十万分之一天平 0.01 mg。"))),
+      res.node));
+    run();
+  }});
+
+/* ---- 2. 稀释 ------------------------------------------------------------ */
+mod({ id: "dilute", group: "配液", name: "稀释", title: "稀释 · C₁V₁ = C₂V₂",
+  desc: "母液和目标液四个量，填三个算第四个。单位随便填 µL / mL / L、µM / mM / M，不用先换算。",
+  build(root) {
+    let unknown = "V1";
+    const res = mkResult();
+    const recalc = () => run();
+    const F = {
+      C1: mkField({ key:"C1", label:"母液浓度", sym:"C₁", dim:"conc", unit:"M",
+                    placeholder:"11.75", value:"11.75", onchange:recalc }),
+      V1: mkField({ key:"V1", label:"取母液体积", sym:"V₁", dim:"volume", unit:"µL",
+                    placeholder:"—", onchange:recalc }),
+      C2: mkField({ key:"C2", label:"目标浓度", sym:"C₂", dim:"conc", unit:"mM",
+                    placeholder:"8", value:"8", onchange:recalc }),
+      V2: mkField({ key:"V2", label:"目标总体积", sym:"V₂", dim:"volume", unit:"mL",
+                    placeholder:"50", value:"50", onchange:recalc })
+    };
+    const seg = h("div");
+    function drawSeg() {
+      seg.innerHTML = "";
+      seg.appendChild(segmented("求解", [
+        { key:"V1", label:"V₁ 取多少" }, { key:"C2", label:"C₂ 稀释后" },
+        { key:"C1", label:"C₁ 母液" }, { key:"V2", label:"V₂ 定容到" }
+      ], unknown, k => { unknown = k; drawSeg(); sync(); run(); }));
+    }
+    function sync() { for (const k in F) F[k].setSolved(k === unknown); }
+
+    function run() {
+      const vals = {}; for (const k in F) vals[k] = F[k].getBase();
+      try {
+        const r = C.dilution(vals, unknown);
+        F[unknown].setBase(r.value);
+        const all = Object.assign({}, vals); all[unknown] = r.value;
+        const used = { C2:["C1","V1","V2"], V2:["C1","V1","C2"],
+                       C1:["C2","V2","V1"], V1:["C2","V2","C1"] }[unknown];
+        const notes = [];
+        const add = all.V2 - all.V1;
+        if (isFinite(add)) {
+          if (add < 0) notes.push({ kind:"danger",
+            text:"取样体积比目标总体积还大 —— 检查一下浓度是不是填反了。" });
+          else notes.push({ kind:"info", text:
+            `稀释倍数 <b>${C.sig(all.C1 / all.C2, 4)} ×</b>，需补稀释液 <b>${C.auto(add,"volume").text}</b>。` });
+        }
+        if (isFinite(all.V1) && all.V1 > 0 && all.V1 < 5e-6) notes.push({ kind:"warn",
+          text:`取样量只有 ${C.auto(all.V1,"volume").text}，低于常规移液器可靠下限（约 5 µL），` +
+               `移液误差会直接变成浓度误差。建议先把母液稀释 10–100 倍再取。` });
+        const say = (isFinite(all.V1) && isFinite(all.V2) && add >= 0)
+          ? `取母液 <b>${C.auto(all.V1,"volume").text}</b>，加稀释液至 <b>${C.auto(all.V2,"volume").text}</b>（补 ${C.auto(add,"volume").text}）。`
+          : null;
+        res.show({ base: r.value, dim: r.dim, big: true, expr: r.expr,
+          subs: used.map(k => `${F[k].spec.sym} ${F[k].text()}`).join("   ·   "),
+          say, notes });
+      } catch (e) {
+        F[unknown].clear();
+        res.show({ error: humanize(e.message, F) });
+      }
+    }
+    drawSeg(); sync();
+    root.appendChild(h("div", { class: "cols" },
+      h("div", { class: "card" }, seg, h("div", { class: "fields" },
+        F.C1.node, F.V1.node, F.C2.node, F.V2.node)),
+      res.node));
+    run();
+  }});
+
+/* ---- 3. 梯度稀释 / 标准曲线 -------------------------------------------- */
+mod({ id: "series", group: "配液", name: "标准曲线", title: "梯度稀释 · 标准曲线系列",
+  desc: "从一个母液配一整套标准品。直接稀释每点各自从母液取；逐级稀释每点从上一级取，适合跨度大的浓度范围。",
+  build(root) {
+    let mode = "direct";
+    const out = h("div");
+    const recalc = () => run();
+    const Cs = mkField({ key:"Cs", label:"母液浓度", dim:"conc", unit:"mM",
+                         placeholder:"100", value:"100", onchange:recalc });
+    const Vf = mkField({ key:"Vf", label:"每点终体积", dim:"volume", unit:"mL",
+                         placeholder:"10", value:"10", onchange:recalc });
+    const targets = mkField({ key:"t", label:"目标浓度（逗号或空格分隔，可含 0 做空白）",
+                              dim:"conc", unit:"mM", value:"0, 0.1, 0.25, 0.5, 1, 2.5, 5",
+                              onchange:recalc });
+    targets.input.setAttribute("inputmode", "text");
+    const gLo = mkField({ key:"lo", label:"最低", dim:null, value:"0.1", onchange:null });
+    const gHi = mkField({ key:"hi", label:"最高", dim:null, value:"10", onchange:null });
+    const gN  = mkField({ key:"n",  label:"点数", dim:null, value:"6", onchange:null });
+    let gKind = "log";
+    const gBox = h("div");
+    function drawGen() {
+      gBox.innerHTML = "";
+      gBox.appendChild(h("div", { class: "row" }, gLo.node, gHi.node, gN.node));
+      gBox.appendChild(h("div", { class: "chiprow" },
+        ["log","linear"].map(k => {
+          const b = h("button", { class:"chip", type:"button", "aria-pressed":String(k===gKind) },
+            k === "log" ? "等比" : "等差");
+          b.addEventListener("click", () => { gKind = k; drawGen(); });
+          return b;
+        }),
+        h("button", { class:"chip", type:"button", style:"margin-left:auto",
+          onclick: () => {
+            try {
+              const s = C.series({ lo:num(gLo.input.value), hi:num(gHi.input.value),
+                                   n:num(gN.input.value), kind:gKind });
+              targets.input.value = s.map(v => C.sig(v, 3)).join(", ");
+              run();
+            } catch (e) { alert(e.message); }
+          } }, "生成 →")));
+    }
+    const modeBox = h("div");
+    function drawMode() {
+      modeBox.innerHTML = "";
+      modeBox.appendChild(segmented("方式", [
+        { key:"direct", label:"直接稀释" }, { key:"serial", label:"逐级稀释" }
+      ], mode, k => { mode = k; drawMode(); run(); }));
+    }
+
+    function run() {
+      out.innerHTML = "";
+      const unit = targets.unit();
+      const list = targets.input.value.split(/[,，;；\s]+/).filter(Boolean)
+        .map(s => num(s)).filter(v => isFinite(v));
+      try {
+        const rows = C.ladder({
+          Cstock: Cs.getBase(), Vfinal: Vf.getBase(),
+          targets: list.map(v => C.toBase(v, "conc", unit)), mode });
+        const serial = mode === "serial";
+        const tbl = h("table", { class: "data" },
+          h("thead", null, h("tr", null,
+            ["#","目标浓度","取自","取样体积","加稀释液","配制总量","倍数"]
+              .map(t => h("th", null, t)))),
+          h("tbody", null, rows.map(r => {
+            const thin = !r.blank && r.Vtransfer < 5e-6;
+            return h("tr", { class: r.blank ? "blankrow" : (thin ? "flag" : "") },
+              h("td", null, String(r.index)),
+              h("td", { class: r.blank ? "" : "em" },
+                r.blank ? "空白 0" : C.auto(r.target, "conc").text),
+              h("td", null, r.from),
+              h("td", null, r.blank ? "—" : C.auto(r.Vtransfer, "volume").text),
+              h("td", null, C.auto(r.Vdiluent, "volume").text),
+              h("td", null, C.auto(r.Vneeded, "volume").text),
+              h("td", null, r.blank ? "—" : C.sig(r.fold, 3) + "×"));
+          })));
+        out.appendChild(h("div", { class: "tablewrap" }, tbl));
+        const thin = rows.filter(r => !r.blank && r.Vtransfer < 5e-6);
+        if (thin.length) out.appendChild(mkNote({ kind:"warn", text:
+          `有 ${thin.length} 个点的取样量低于 5 µL（表中标黄），常规移液器在这个量程误差大。` +
+          `改用逐级稀释，或把每点终体积放大。` }));
+        if (serial) out.appendChild(mkNote({ kind:"info", text:
+          `逐级稀释里每一级都要配够「配制总量」—— 它等于自己的终体积加上下一级要取走的量。` +
+          `每取一级务必先涡旋混匀，否则误差会一级一级累积。` }));
+        else out.appendChild(mkNote({ kind:"", text:
+          `直接稀释每点都从母液取，误差互相独立，不会累积；代价是最低点的取样量可能很小。` }));
+      } catch (e) {
+        out.appendChild(h("div", { class: "err" }, e.message));
+      }
+    }
+    drawGen(); drawMode();
+    root.appendChild(h("div", null,
+      h("div", { class: "card" },
+        modeBox,
+        h("div", { class: "fields" },
+          h("div", { class: "row" }, Cs.node, Vf.node),
+          targets.node)),
+      h("div", { class: "card" },
+        h("h3", null, "按范围生成目标浓度"),
+        gBox,
+        h("div", { class:"tiny", style:"margin-top:9px" },
+          "等比适合跨几个数量级的标定（检出限到饱和）；等差适合窄范围线性段。生成后仍可手动改。")),
+      h("div", { class: "card" }, h("h3", null, "配制表"), out)));
+    run();
+  }});
+
+/* ---- 4. 液体试剂（浓酸等） --------------------------------------------- */
+mod({ id: "liquid", group: "配液", name: "液体试剂", title: "浓酸 / 液体试剂",
+  desc: "瓶子上只有密度和质量分数，先换算成 mol/L，再算要取多少。质量分数按 w/w（主流标法），和密度是配套的。",
+  build(root) {
+    const resA = mkResult(), resB = mkResult();
+    const recalc = () => { runA(); runB(); };
+    let isAcid = true, pickedName = "浓硫酸";   // the prefilled rho/w/M
+    const rho = mkField({ key:"rho", label:"密度", sym:"ρ", dim:null, suffix:"g/mL",
+                          placeholder:"1.84", value:"1.84", onchange:recalc,
+      side: libButton(r => {
+        if (!r.rho) { alert(r.n + " 不是液体试剂，没有密度/质量分数。"); return; }
+        rho.input.value = r.rho; w.input.value = C.sig(r.w * 100, 4);
+        try { Mm.input.value = C.sig(C.molarMass(r.f).mass, 6); } catch (e) {}
+        isAcid = !!r.acid; pickedName = r.n; recalc();
+      }) });
+    const w  = mkField({ key:"w", label:"质量分数", sym:"w", dim:null, suffix:"%",
+                         placeholder:"98", value:"98", onchange:recalc });
+    const Mm = mkField({ key:"M", label:"摩尔质量", sym:"M", dim:"molar", unit:"g/mol",
+                         placeholder:"98.078", value:"98.078", onchange:recalc });
+    const C2 = mkField({ key:"C2", label:"目标浓度", sym:"C₂", dim:"conc", unit:"M",
+                         placeholder:"0.5", value:"0.5", onchange:recalc });
+    const V2 = mkField({ key:"V2", label:"目标体积", sym:"V₂", dim:"volume", unit:"mL",
+                         placeholder:"100", value:"100", onchange:recalc });
+    let stock = NaN;
+
+    function runA() {
+      try {
+        const r = C.stockFromLiquid({ rho:num(rho.input.value), w:num(w.input.value)/100,
+                                      M:Mm.getBase() });
+        stock = r.value;
+        resA.show({ base:r.value, dim:"conc", big:true, expr:r.expr,
+          subs:`ρ ${rho.input.value} g/mL   ·   w ${w.input.value} %   ·   M ${Mm.input.value} g/mol`,
+          say:`原瓶试剂${pickedName ? "（" + pickedName + "）" : ""}的摩尔浓度是 <b>${C.auto(r.value,"conc").text}</b>。`,
+          notes:[{ kind:"", text:
+            "1000 是 L→mL 的换算：1 L 原液重 1000·ρ 克，其中 w% 是溶质，再除摩尔质量得物质的量。" }] });
+      } catch (e) { stock = NaN; resA.show({ error:e.message }); }
+    }
+    function runB() {
+      try {
+        if (!isFinite(stock) || stock <= 0) throw new Error("先把左边的密度 / 质量分数 / 摩尔质量填完整");
+        const r = C.dilution({ C1:stock, C2:C2.getBase(), V2:V2.getBase() }, "V1");
+        const add = V2.getBase() - r.value;
+        const notes = [];
+        if (r.value > V2.getBase()) notes.push({ kind:"danger",
+          text:"目标浓度高于原瓶浓度，稀释做不到。" });
+        else if (r.value < 5e-6) notes.push({ kind:"warn",
+          text:`只需取 ${C.auto(r.value,"volume").text}，低于移液器可靠下限，先配中间母液再稀释。` });
+        notes.push({ kind: isAcid ? "danger" : "info", text: isAcid
+          ? "<b>酸入水，绝不可水入酸。</b>先在容量瓶里加约 2/3 体积的水，再沿壁缓慢加入浓酸，边加边摇散热，冷却到室温后再定容。"
+          : "先加约 2/3 体积稀释液，再加入原液，混匀冷却后定容到刻度。" });
+        resB.show({ base:r.value, dim:"volume", big:true, expr:"V₁ = C₂V₂ / C₁",
+          subs:`C₂ ${C2.text()}   ·   V₂ ${V2.text()}   ·   C₁ ${C.auto(stock,"conc").text}（原瓶）`,
+          say: add >= 0 ? `量取原液 <b>${C.auto(r.value,"volume").text}</b>，加水定容到 <b>${C.auto(V2.getBase(),"volume").text}</b>。` : null,
+          notes });
+      } catch (e) { resB.show({ error:e.message }); }
+    }
+    root.appendChild(h("div", null,
+      h("div", { class:"cols" },
+        h("div", { class:"card" },
+          h("h3", null, "① 原瓶试剂有多浓"),
+          h("div", { class:"fields" }, rho.node, w.node, Mm.node)),
+        resA.node),
+      h("div", { class:"cols", style:"margin-top:14px" },
+        h("div", { class:"card" },
+          h("h3", null, "② 配指定浓度要取多少"),
+          h("div", { class:"fields" }, C2.node, V2.node)),
+        resB.node)));
+    recalc();
+  }});
+
+/* ---- 5. 称量回算 -------------------------------------------------------- */
+mod({ id: "weigh", group: "配液", name: "称量回算", title: "称量回算",
+  desc: "天平上很难刚好停在目标值。填实际称到的质量，马上知道按原体积定容浓度变成多少，或者要定容到多少才正好。",
+  build(root) {
+    const res = mkResult();
+    const recalc = () => run();
+    const Mm = mkField({ key:"M", label:"摩尔质量", sym:"M", dim:"molar", unit:"g/mol",
+      placeholder:"58.44", value:"58.44", onchange:recalc,
+      side: libButton(r => { if (r.M) { Mm.input.value = C.sig(r.M,6); recalc(); }
+                             else alert(r.n + "：" + (r.note || "没有摩尔质量")); }) });
+    const Ct = mkField({ key:"C", label:"目标浓度", sym:"C_目标", dim:"conc", unit:"mM",
+                         placeholder:"100", value:"100", onchange:recalc });
+    const Vt = mkField({ key:"V", label:"计划定容体积", sym:"V_目标", dim:"volume", unit:"mL",
+                         placeholder:"50", value:"50", onchange:recalc });
+    const ma = mkField({ key:"ma", label:"实际称到的质量", sym:"m_实际", dim:"mass", unit:"mg",
+                         placeholder:"296.5", value:"296.5", onchange:recalc });
+    function run() {
+      try {
+        const M = Mm.getBase(), Ctg = Ct.getBase(), Vtg = Vt.getBase(), m = ma.getBase();
+        if (!isFinite(M) || !isFinite(Ctg) || !isFinite(Vtg) || !isFinite(m))
+          throw new Error("把四个值都填上");
+        const wbk = C.weighBack({ M, m_actual:m, V_target:Vtg, C_target:Ctg });
+        const mT = M * Ctg * Vtg;
+        const dev = wbk.deviation;
+        const kind = Math.abs(dev) < 1 ? "info" : (Math.abs(dev) < 5 ? "warn" : "danger");
+        res.show({
+          cap:"方案 A — 还是定容到计划体积",
+          base:wbk.C_actual, dim:"conc", big:true, expr:"C_实际 = m_实际 / (M · V_目标)",
+          subs:`m_实际 ${ma.text()}   ·   M ${Mm.text()}   ·   V ${Vt.text()}`,
+          say:`目标要称 <b>${C.auto(mT,"mass").text}</b>，实际称了 <b>${C.auto(m,"mass").text}</b>。` +
+              `定容到 ${C.auto(Vtg,"volume").text} 的话，真实浓度是 <b>${C.auto(wbk.C_actual,"conc").text}</b>。`,
+          notes:[
+            { kind, text:`相对目标浓度偏差 <b>${dev >= 0 ? "+" : ""}${C.sig(dev,3)} %</b>。` +
+              (Math.abs(dev) < 1 ? "在常规标定可接受范围内，记下真实浓度直接用即可。"
+                : "做标准曲线时请按真实浓度记录，不要按目标值记。") },
+            { kind:"info", text:`<b>方案 B — 想正好命中目标浓度：</b>改成定容到 ` +
+              `<b>${C.auto(wbk.V_needed,"volume").text}</b>（而不是 ${C.auto(Vtg,"volume").text}）。` +
+              `<br><span class="mono" style="font-size:12px">V = m_实际 / (M · C_目标)</span>` }
+          ]});
+      } catch (e) { res.show({ error:e.message }); }
+    }
+    root.appendChild(h("div", { class:"cols" },
+      h("div", { class:"card" }, h("div", { class:"fields" },
+        Mm.node, Ct.node, Vt.node, ma.node)),
+      res.node));
+    run();
+  }});
+
+/* ---- 6. 缓冲液 ---------------------------------------------------------- */
+mod({ id: "buffer", group: "配液", name: "缓冲液", title: "缓冲液 · 按 pH 配",
+  desc: "按目标 pH 直接给出两种盐各称多少。已按 Davies 式做离子强度活度校正 —— 不校正的话 0.1 M PBS 会偏 0.3–0.6 个 pH 单位。",
+  build(root) {
+    let sysKey = "phosphate_na", acidKey = null, baseKey = null, davies = true;
+    const res = mkResult();
+    const out = h("div");
+    const recalc = () => run();
+    const pH = mkField({ key:"pH", label:"目标 pH", dim:null, value:"7.40", onchange:recalc });
+    const Ct = mkField({ key:"Ct", label:"缓冲总浓度", dim:"conc", unit:"mM",
+                         value:"100", onchange:recalc });
+    const Vf = mkField({ key:"Vf", label:"配制体积", dim:"volume", unit:"mL",
+                         value:"500", onchange:recalc });
+    const T  = mkField({ key:"T", label:"使用温度", dim:null, suffix:"°C",
+                         value:"25", onchange:recalc });
+    const nacl = mkField({ key:"nacl", label:"另加 NaCl", dim:"conc", unit:"mM",
+                           value:"0", onchange:recalc });
+    const kcl  = mkField({ key:"kcl", label:"另加 KCl", dim:"conc", unit:"mM",
+                           value:"0", onchange:recalc });
+    const sysSel = h("select");
+    for (const k in C.BUFFERS) sysSel.appendChild(h("option", { value:k }, C.BUFFERS[k].name));
+    sysSel.value = sysKey;
+    const acidSel = h("select"), baseSel = h("select");
+    [sysSel, acidSel, baseSel].forEach(s => { s.className = ""; });
+
+    function fillReagents() {
+      const sys = C.BUFFERS[sysKey];
+      acidSel.innerHTML = ""; baseSel.innerHTML = "";
+      sys.reagents.forEach(r => {
+        acidSel.appendChild(h("option", { value:r.key }, r.label));
+        baseSel.appendChild(h("option", { value:r.key }, r.label));
+      });
+      acidSel.value = acidKey && sys.reagents.some(r => r.key === acidKey) ? acidKey : sys.defaultAcid;
+      baseSel.value = baseKey && sys.reagents.some(r => r.key === baseKey) ? baseKey : sys.defaultBase;
+      acidKey = acidSel.value; baseKey = baseSel.value;
+    }
+    sysSel.addEventListener("change", () => {
+      sysKey = sysSel.value; acidKey = null; baseKey = null;
+      fillReagents();
+      const s = C.BUFFERS[sysKey];
+      pH.input.value = ((s.range[0] + s.range[1]) / 2).toFixed(2);
+      run();
+    });
+    acidSel.addEventListener("change", () => { acidKey = acidSel.value; run(); });
+    baseSel.addEventListener("change", () => { baseKey = baseSel.value; run(); });
+    const dav = h("input", { type:"checkbox", checked:"checked" });
+    dav.addEventListener("change", () => { davies = dav.checked; run(); });
+
+    function wrapSel(label, sel) {
+      return h("label", { class:"field" },
+        h("span", { class:"lab" }, h("span", null, label)),
+        h("div", { class:"inrow" }, (sel.classList.add("solo"), sel)));
+    }
+
+    function run() {
+      out.innerHTML = "";
+      try {
+        const r = C.buffer({
+          system:sysKey, pH:num(pH.input.value), Ctotal:Ct.getBase(), Vfinal:Vf.getBase(),
+          acidKey, baseKey, T:num(T.input.value),
+          addNaCl:nacl.getBase() || 0, addKCl:kcl.getBase() || 0, davies });
+
+        const tbl = h("table", { class:"data" },
+          h("thead", null, h("tr", null,
+            ["试剂","摩尔质量","配成浓度","称取 / 量取"].map(t => h("th", null, t)))),
+          h("tbody", null, r.items.map(it => h("tr", null,
+            h("td", { style:"color:var(--ink)" }, it.reagent.label),
+            h("td", null, C.sig(it.M, 6) + " g/mol"),
+            h("td", null, C.auto(it.conc, "conc").text),
+            h("td", { class:"em" }, it.volume
+              ? C.auto(it.volume, "volume").text + "（液体）"
+              : C.auto(it.mass, "mass").text)))));
+        out.appendChild(h("div", { class:"tablewrap" }, tbl));
+        out.appendChild(h("div", { class:"tiny", style:"margin-top:10px" },
+          `溶于约 2/3 体积的水，完全溶解后定容到 ${C.auto(r.Vfinal,"volume").text}。`));
+
+        const idealPKa = r.pKaIdeal[r.nearestIndex], appPKa = r.pKaApp[r.nearestIndex];
+        const dT = num(T.input.value) - 25;
+        res.show({
+          cap:"有效 pKa 与配比", big:false,
+          expr:"pH = pKa' + log([A⁻]/[HA])",
+          subs:`pKa (热力学, 25 °C) ${C.sig(r.pKaThermo[r.nearestIndex],4)}` +
+               (Math.abs(dT) > 0.01 ? `   →   温度校正后 ${C.sig(idealPKa,4)}` : ""),
+          tail:davies
+            ? `pKa' (I = ${C.sig(r.I,3)} M, Davies) ${C.sig(appPKa,4)}   ·   偏移 ${r.shift >= 0 ? "+" : ""}${C.sig(r.shift,2)}`
+            : "未启用活度校正",
+          equiv:false,
+          say:`离子强度 <b>${C.sig(r.I,3)} M</b>　·　酸式 : 碱式 = <b>${C.sig(r.ratio,4)} : 1</b>`,
+          notes:[
+            ...r.warnings.map(w => ({ kind:"warn", text:w })),
+            davies
+              ? { kind:"info", text:"<b>已做 Davies 活度校正。</b>离子强度会把表观 pKa 拉偏（磷酸盐这种 1→2 价跃迁拉得最多），" +
+                  "不校正算出的配比实测会明显偏碱。" }
+              : { kind:"danger", text:"<b>活度校正已关闭。</b>这是教科书里的裸 Henderson-Hasselbalch 式，" +
+                  "在 0.1 M 以上离子强度下，磷酸盐体系算出的配比实测能偏 0.3–0.6 个 pH 单位。" },
+            { kind:"warn", text:"<b>这是理论配比，残余误差仍有 ±0.1–0.2 pH。</b>" +
+                "配好以后一定要用 pH 计实测，再用稀 HCl / NaOH 滴到目标值。" }
+          ]});
+      } catch (e) {
+        out.appendChild(h("div", { class:"err" }, e.message));
+        res.show({ error:e.message });
+      }
+    }
+    fillReagents();
+    root.appendChild(h("div", null,
+      h("div", { class:"cols" },
+        h("div", null,
+          h("div", { class:"card" },
+            h("div", { class:"fields" },
+              wrapSel("缓冲体系", sysSel),
+              h("div", { class:"row" }, pH.node, T.node),
+              h("div", { class:"row" }, Ct.node, Vf.node),
+              wrapSel("酸式试剂（质子多的一侧）", acidSel),
+              wrapSel("碱式试剂（质子少的一侧）", baseSel))),
+          h("div", { class:"card" },
+            h("h3", null, "可选：补充背景电解质"),
+            h("div", { class:"fields" },
+              h("div", { class:"row" }, nacl.node, kcl.node),
+              h("label", { class:"check" }, dav,
+                h("span", null, "启用 Davies 活度校正（强烈建议开）")),
+              h("div", { class:"tiny" },
+                "标准 1× PBS 是 10 mM 磷酸盐 + 137 mM NaCl + 2.7 mM KCl。" +
+                "背景盐会显著拉高离子强度，进而改变表观 pKa，所以填了才算得准。"))),
+          // the recipe is the primary output — keep it ahead of the pKa card
+          // in source order so it comes first when the grid collapses to one column
+          h("div", { class:"card" }, h("h3", null, "配制表"), out)),
+        res.node)));
+    run();
+  }});
+
+/* ---- 7. 分子量 / 试剂库 ------------------------------------------------- */
+mod({ id: "mass", group: "工具", name: "分子量", title: "分子量 · 试剂库",
+  desc: "支持嵌套括号和结晶水：CuSO4·5H2O、K3[Fe(CN)6]、Na2HPO4·12H2O。结晶水会算进去 —— 这是配液最常见的坑。",
+  build(root) {
+    const res = mkResult();
+    const bd = h("div");
+    const f = mkField({ key:"f", label:"化学式", dim:null, value:"CuSO4·5H2O",
+      placeholder:"K3[Fe(CN)6]", onchange:() => run(),
+      side: libButton(r => {
+        if (!r.f) { alert(r.n + "：" + (r.note || "没有确定的化学式")); return; }
+        f.input.value = r.f; run();
+      }) });
+    f.input.setAttribute("inputmode", "text");
+    const chips = h("div", { class:"chiprow" },
+      ["NaCl","KCl","K3[Fe(CN)6]","K4[Fe(CN)6]·3H2O","Na2HPO4·12H2O","KH2PO4",
+       "CuSO4·5H2O","C6H12O6","FeCl3·6H2O"].map(s => {
+        const b = h("button", { class:"chip", type:"button" }, pretty(s));
+        b.addEventListener("click", () => { f.input.value = s; run(); });
+        return b;
+      }));
+
+    function run() {
+      bd.innerHTML = "";
+      try {
+        const r = C.molarMass(f.input.value);
+        res.show({ cap:"摩尔质量", big:C.sig(r.mass, 6), equiv:false,
+          say:`<b>${pretty(f.input.value.trim())}</b>　M = <b>${C.sig(r.mass,6)} g/mol</b>`,
+          expr:"M = Σ (原子量 × 原子数)",
+          notes:/[·]/.test(f.input.value) ? [{ kind:"info", text:
+            "结晶水已计入。按无水式称量水合盐会使浓度系统性偏低 —— " +
+            "例如 CuSO₄·5H₂O 用 159.6 而不是 249.68，实际只配出 64 % 的浓度。" }] : [] });
+        const tb = h("table", { class:"breakdown" }, h("tbody", null,
+          r.rows.map(row => h("tr", null,
+            h("td", null, row.element + (row.count !== 1 ? " ×" + C.sig(row.count,4) : "")),
+            h("td", null, C.sig(row.atomic, 6)),
+            h("td", null, C.sig(row.subtotal, 6)),
+            h("td", null, C.sig(row.percent, 3) + "%")))));
+        bd.appendChild(tb);
+        bd.appendChild(h("div", { class:"tiny", style:"margin-top:9px" },
+          "列：元素与个数 · 标准原子量 · 小计 g/mol · 质量百分比"));
+      } catch (e) {
+        bd.appendChild(h("div", { class:"err" }, e.message));
+        res.show({ error:e.message });
+      }
+    }
+    root.appendChild(h("div", { class:"cols" },
+      h("div", null,
+        h("div", { class:"card" }, h("div", { class:"fields" }, f.node), chips),
+        h("div", { class:"card" }, h("h3", null, "组成"), bd)),
+      res.node));
+    run();
+  }});
+
+/* ---- 8. 单位换算 -------------------------------------------------------- */
+mod({ id: "units", group: "工具", name: "单位换算", title: "单位换算",
+  desc: "填一个值，所有同量纲单位一次列全。摩尔浓度和质量浓度（mg/mL、ppm、%w/v）之间互转需要摩尔质量。",
+  build(root) {
+    const DIMLIST = [
+      ["mass","质量"],["volume","体积"],["amount","物质的量"],["conc","摩尔浓度"],
+      ["massconc","质量浓度"],["area","面积"],["length","长度"],["current","电流"],
+      ["charge","电量"],["rate","扫速"],["time","时间"],["surfconc","表面覆盖度"]
+    ];
+    let dim = "volume";
+    const host = h("div"), bridge = h("div");
+    const Mm = mkField({ key:"M", label:"摩尔质量（摩尔 ⇄ 质量浓度 换算用）", sym:"M",
+      dim:"molar", unit:"g/mol", value:"180.16", onchange:() => run(),
+      side: libButton(r => { if (r.M) { Mm.input.value = C.sig(r.M,6); run(); }
+                             else alert(r.n + "：" + (r.note || "没有摩尔质量")); }) });
+    let fld = null;
+    const sel = h("select", null, DIMLIST.map(d => h("option", { value:d[0] }, d[1])));
+    sel.value = dim; sel.classList.add("solo");
+    sel.addEventListener("change", () => { dim = sel.value; build(); });
+
+    function build() {
+      host.innerHTML = "";
+      fld = mkField({ key:"v", label:"数值", dim, unit:C.baseUnitName(dim),
+                      value:"1", onchange:() => run() });
+      host.appendChild(h("div", { class:"fields" }, fld.node));
+      run();
+    }
+    function run() {
+      bridge.innerHTML = "";
+      const base = fld.getBase();
+      const table = h("table", null, h("tbody", null,
+        C.DIMS[dim].units.map(u => h("tr", null,
+          h("td", null, u[0]),
+          h("td", null, isFinite(base) ? C.sig(base / u[1], 6) : "—")))));
+      bridge.appendChild(h("div", { class:"equiv", style:"margin-top:0;border-top:0;padding-top:0" }, table));
+
+      if ((dim === "conc" || dim === "massconc") && isFinite(base)) {
+        const M = Mm.getBase();
+        if (isFinite(M) && M > 0) {
+          const other = dim === "conc" ? "massconc" : "conc";
+          const val = dim === "conc" ? base * M : base / M;
+          bridge.appendChild(h("div", { class:"note info", html:
+            `换算到${other === "conc" ? "摩尔浓度" : "质量浓度"}（M = ${C.sig(M,6)} g/mol）：` +
+            `<br><b>${C.auto(val, other).text}</b>` +
+            `<br><span class="mono" style="font-size:12px">` +
+            (dim === "conc" ? "c[g/L] = C[mol/L] × M" : "C[mol/L] = c[g/L] / M") + "</span>" }));
+          bridge.appendChild(h("div", { class:"equiv" }, h("table", null, h("tbody", null,
+            C.DIMS[other].units.map(u => h("tr", null,
+              h("td", null, u[0]), h("td", null, C.sig(val / u[1], 6))))))));
+        } else {
+          bridge.appendChild(h("div", { class:"note warn", html:
+            "填上摩尔质量就能同时给出" + (dim === "conc" ? "质量浓度（mg/mL、ppm、%w/v）" : "摩尔浓度（mM、µM）") + "。" }));
+        }
+      }
+    }
+    root.appendChild(h("div", { class:"cols" },
+      h("div", null,
+        h("div", { class:"card" },
+          h("div", { class:"fields" },
+            h("label", { class:"field" },
+              h("span", { class:"lab" }, h("span", null, "量纲")),
+              h("div", { class:"inrow" }, sel))),
+          host),
+        h("div", { class:"card" }, h("div", { class:"fields" }, Mm.node),
+          h("div", { class:"tiny", style:"margin-top:8px" },
+            "ppm 按水溶液近似当作 mg/L；%(w/v) 按 1 g / 100 mL。两者都是质量浓度，和摩尔浓度之间必须过摩尔质量。"))),
+      h("div", { class:"card" }, h("h3", null, "等价值"), bridge)));
+    build();
+  }});
+
+/* ---- 9. 电化学 ---------------------------------------------------------- */
+mod({ id: "echem", group: "工具", name: "电化学", title: "电化学计算",
+  desc: "电极面积、电流密度、Randles-Ševčík、Cottrell、表面覆盖度、检出限。面积一处算好，下面几块直接复用。",
+  build(root) {
+    let Acm2 = Math.PI * 0.3 * 0.3 / 4;   // Ø3 mm default, cm²
+
+    /* --- electrode area --- */
+    let shape = "disc";
+    const areaOut = h("div"), shapeBox = h("div"), dimBox = h("div");
+    const d  = mkField({ key:"d", label:"直径", dim:"length", unit:"mm", value:"3", onchange:()=>areaRun() });
+    const wq = mkField({ key:"w", label:"宽", dim:"length", unit:"mm", value:"2", onchange:()=>areaRun() });
+    const hq = mkField({ key:"h", label:"高", dim:"length", unit:"mm", value:"5", onchange:()=>areaRun() });
+    const dO = mkField({ key:"dO", label:"外径", dim:"length", unit:"mm", value:"4", onchange:()=>areaRun() });
+    const dI = mkField({ key:"dI", label:"内径", dim:"length", unit:"mm", value:"2", onchange:()=>areaRun() });
+    function drawShape() {
+      shapeBox.innerHTML = "";
+      shapeBox.appendChild(segmented("形状", [
+        { key:"disc", label:"圆盘" }, { key:"rect", label:"矩形" }, { key:"ring", label:"环状" }
+      ], shape, k => { shape = k; drawShape(); drawDims(); areaRun(); }));
+    }
+    function drawDims() {
+      dimBox.innerHTML = "";
+      const f = shape === "disc" ? [d.node] : shape === "rect" ? [wq.node, hq.node] : [dO.node, dI.node];
+      dimBox.appendChild(h("div", { class:"row" }, f));
+    }
+    function areaRun() {
+      areaOut.innerHTML = "";
+      try {
+        const dims = shape === "disc" ? { d:d.getBase() }
+                   : shape === "rect" ? { w:wq.getBase(), h:hq.getBase() }
+                   : { dOut:dO.getBase(), dIn:dI.getBase() };
+        const r = C.electrodeArea(shape, dims);
+        Acm2 = r.value;
+        areaOut.appendChild(h("div", { class:"big", style:"font-size:24px;margin:0" },
+          C.sig(r.value, 4), h("span", { class:"u" }, "cm²")));
+        areaOut.appendChild(h("div", { class:"work", style:"margin-top:9px" },
+          h("span", { class:"eq" }, r.expr),
+          h("span", { class:"sb" }, C.sig(r.value * 100, 4) + " mm²  ·  下面几块都用这个面积")));
+        rsRun(); jRun(); covRun(); cotRun();
+      } catch (e) {
+        Acm2 = NaN;
+        areaOut.appendChild(h("div", { class:"err" }, e.message));
+      }
+    }
+
+    /* --- current density --- */
+    const jOut = h("div");
+    const iIn = mkField({ key:"i", label:"电流", dim:"current", unit:"µA", value:"58.6", onchange:()=>jRun() });
+    function jRun() {
+      jOut.innerHTML = "";
+      try {
+        const r = C.currentDensity({ i:iIn.getBase(), A:Acm2 });
+        const uA = r.value * 1e6;
+        jOut.appendChild(h("div", { class:"big", style:"font-size:24px;margin:0" },
+          C.sig(Math.abs(uA) >= 1000 ? uA/1000 : uA, 4),
+          h("span", { class:"u" }, Math.abs(uA) >= 1000 ? "mA/cm²" : "µA/cm²")));
+        jOut.appendChild(h("div", { class:"work", style:"margin-top:9px" },
+          h("span", { class:"eq" }, "j = i / A"),
+          h("span", { class:"sb" }, `i ${iIn.text()}   ·   A ${C.sig(Acm2,4)} cm²`)));
+      } catch (e) { jOut.appendChild(h("div", { class:"err" }, e.message)); }
+    }
+
+    /* --- Randles-Sevcik --- */
+    let rsUnknown = "ip";
+    const rsSeg = h("div"), rsOut = h("div");
+    const rsN = mkField({ key:"n", label:"电子数", sym:"n", dim:null, value:"1", onchange:()=>rsRun() });
+    const rsD = mkField({ key:"D", label:"扩散系数", sym:"D", dim:"diff", unit:"cm²/s",
+                          value:"7.6e-6", onchange:()=>rsRun() });
+    const rsC = mkField({ key:"C", label:"体相浓度", sym:"C", dim:"conc", unit:"mM",
+                          value:"5", onchange:()=>rsRun() });
+    const rsV = mkField({ key:"v", label:"扫速", sym:"v", dim:"rate", unit:"mV/s",
+                          value:"50", onchange:()=>rsRun() });
+    const rsI = mkField({ key:"ip", label:"峰电流", sym:"iₚ", dim:"current", unit:"µA",
+                          placeholder:"—", onchange:()=>rsRun() });
+    const RSF = { ip:rsI, D:rsD, C:rsC };
+    function drawRs() {
+      rsSeg.innerHTML = "";
+      rsSeg.appendChild(segmented("求解", [
+        { key:"ip", label:"iₚ 峰电流" }, { key:"D", label:"D 扩散系数" },
+        { key:"A", label:"A 有效面积" }, { key:"C", label:"C 浓度" }
+      ], rsUnknown, k => {
+        rsUnknown = k; drawRs();
+        [rsI, rsD, rsC].forEach(f => f.setSolved(false));
+        if (RSF[k]) RSF[k].setSolved(true);
+        rsRun();
+      }));
+    }
+    function rsRun() {
+      rsOut.innerHTML = "";
+      try {
+        const p = { n:rsN.getRaw(), A:Acm2, D:rsD.getBase(), C:rsC.getBase(),
+                    v:rsV.getBase(), ip:rsI.getBase() };
+        const r = C.randlesSevcik(p, rsUnknown);
+        if (RSF[rsUnknown]) RSF[rsUnknown].setBase(r.value);
+        const a = C.auto(r.value, r.dim, 4);
+        rsOut.appendChild(h("div", { class:"big", style:"font-size:24px;margin:0" },
+          C.sig(a.value, 4), h("span", { class:"u" }, a.unit)));
+        rsOut.appendChild(h("div", { class:"work", style:"margin-top:9px" },
+          h("span", { class:"eq" }, r.expr),
+          h("span", { class:"sb" },
+            `n ${rsN.input.value}  ·  A ${C.sig(Acm2,4)} cm²  ·  D ${rsD.text()}  ·  ` +
+            `C ${rsUnknown === "C" ? C.auto(r.value,"conc").text : rsC.text()}  ·  v ${rsV.text()}`),
+          h("span", { class:"sb" },
+            `式中 C 取 ${C.sig((rsUnknown === "C" ? r.value : p.C)/1000, 4)} mol/cm³（= 浓度 ÷ 1000）`)));
+      } catch (e) { rsOut.appendChild(h("div", { class:"err" }, e.message)); }
+    }
+
+    /* --- Cottrell --- */
+    const cotOut = h("div");
+    const cotT = mkField({ key:"t", label:"取样时间", sym:"t", dim:"time", unit:"s",
+                           value:"1", onchange:()=>cotRun() });
+    function cotRun() {
+      cotOut.innerHTML = "";
+      try {
+        const r = C.cottrell({ n:rsN.getRaw(), A:Acm2, D:rsD.getBase(),
+                               C:rsC.getBase(), t:cotT.getBase() });
+        const a = C.auto(r.value, "current", 4);
+        cotOut.appendChild(h("div", { class:"big", style:"font-size:24px;margin:0" },
+          C.sig(a.value,4), h("span", { class:"u" }, a.unit)));
+        cotOut.appendChild(h("div", { class:"work", style:"margin-top:9px" },
+          h("span", { class:"eq" }, r.expr),
+          h("span", { class:"sb" }, `复用上面的 n / A / D / C，t ${cotT.text()}`)));
+      } catch (e) { cotOut.appendChild(h("div", { class:"err" }, e.message)); }
+    }
+
+    /* --- coverage + charge --- */
+    const covOut = h("div");
+    const covQ = mkField({ key:"Q", label:"积分电量", sym:"Q", dim:"charge", unit:"µC",
+                           value:"1", onchange:()=>covRun() });
+    const covN = mkField({ key:"z", label:"转移电子数", sym:"n", dim:null,
+                           value:"1", onchange:()=>covRun() });
+    function covRun() {
+      covOut.innerHTML = "";
+      try {
+        const r = C.coverage({ Q:covQ.getBase(), n:covN.getRaw(), A:Acm2 });
+        const mol = C.chargeToMoles({ Q:covQ.getBase(), z:covN.getRaw() });
+        const a = C.auto(r.value, "surfconc", 4);
+        covOut.appendChild(h("div", { class:"big", style:"font-size:24px;margin:0" },
+          C.sig(a.value,4), h("span", { class:"u" }, a.unit)));
+        covOut.appendChild(h("div", { class:"work", style:"margin-top:9px" },
+          h("span", { class:"eq" }, "Γ = Q / (nFA)"),
+          h("span", { class:"sb" }, `Q ${covQ.text()}  ·  n ${covN.input.value}  ·  A ${C.sig(Acm2,4)} cm²`),
+          h("span", { class:"sb" }, `对应物质的量 n = Q/(nF) = ${C.auto(mol.value,"amount").text}`)));
+      } catch (e) { covOut.appendChild(h("div", { class:"err" }, e.message)); }
+    }
+
+    /* --- LOD --- */
+    const lodOut = h("div");
+    const lodS = mkField({ key:"S", label:"灵敏度（标定曲线斜率）", dim:null, suffix:"µA/mM",
+                           value:"1.2", onchange:()=>lodRun() });
+    const lodSig = mkField({ key:"sig", label:"空白信号标准差 σ", dim:"current", unit:"nA",
+                             value:"2", onchange:()=>lodRun() });
+    function lodRun() {
+      lodOut.innerHTML = "";
+      try {
+        const S_A_per_M = num(lodS.input.value) * 1e-6 / 1e-3;    // µA/mM → A/(mol/L)
+        const r3 = C.detectionLimit({ S:S_A_per_M, sigma:lodSig.getBase(), k:3 });
+        const r10 = C.detectionLimit({ S:S_A_per_M, sigma:lodSig.getBase(), k:10 });
+        lodOut.appendChild(h("div", { class:"big", style:"font-size:24px;margin:0" },
+          C.sig(C.auto(r3.value,"conc").value, 4),
+          h("span", { class:"u" }, C.auto(r3.value,"conc").unit)));
+        lodOut.appendChild(h("div", { class:"work", style:"margin-top:9px" },
+          h("span", { class:"eq" }, "LOD = 3σ / S　　LOQ = 10σ / S"),
+          h("span", { class:"sb" }, `σ ${lodSig.text()}  ·  S ${lodS.input.value} µA/mM`),
+          h("span", { class:"sb" }, `LOQ = ${C.auto(r10.value,"conc").text}`),
+          h("span", { class:"sb" }, `归一化灵敏度 ${C.sig(num(lodS.input.value)/Acm2, 4)} µA·mM⁻¹·cm⁻²`)));
+        lodOut.appendChild(mkNote({ kind:"warn", text:
+          "<b>σ 取哪个要说清楚。</b>空白溶液重复测量的信号标准差（n ≥ 10）和标定曲线的拟合残差标准误 " +
+          "不是一回事，算出的 LOD 可以差一倍以上。报数据时必须注明用的是哪一种。" }));
+      } catch (e) { lodOut.appendChild(h("div", { class:"err" }, e.message)); }
+    }
+
+    drawShape(); drawDims(); drawRs();
+    root.appendChild(h("div", null,
+      h("div", { class:"card" }, h("h3", null, "电极面积"), shapeBox, dimBox,
+        h("div", { style:"margin-top:12px" }, areaOut),
+        mkNote({ kind:"", text:"这是<b>几何面积</b>。粗糙或多孔修饰电极的电化学活性面积可能大几倍，" +
+          "要用下面的 Randles-Ševčík 反解「A 有效面积」来测。" })),
+      h("div", { class:"cols" },
+        h("div", { class:"card" }, h("h3", null, "电流密度"),
+          h("div", { class:"fields" }, iIn.node), h("div", { style:"margin-top:12px" }, jOut)),
+        h("div", { class:"card" }, h("h3", null, "Cottrell（计时电流）"),
+          h("div", { class:"fields" }, cotT.node), h("div", { style:"margin-top:12px" }, cotOut))),
+      h("div", { class:"card" }, h("h3", null, "Randles-Ševčík（可逆，25 °C）"),
+        rsSeg,
+        h("div", { class:"fields" },
+          h("div", { class:"row" }, rsN.node, rsV.node),
+          h("div", { class:"row" }, rsD.node, rsC.node),
+          rsI.node),
+        h("div", { style:"margin-top:12px" }, rsOut),
+        mkNote({ kind:"warn", text:"<b>原式里的 C 单位是 mol/cm³，不是 mol/L，差 1000 倍。</b>" +
+          "这里按 mM 收，内部自动 ÷1000 —— 上面的推导行会把真正代进去的 mol/cm³ 值写出来，可以对照检查。" })),
+      h("div", { class:"cols" },
+        h("div", { class:"card" }, h("h3", null, "表面覆盖度 Γ"),
+          h("div", { class:"fields" }, h("div", { class:"row" }, covQ.node, covN.node)),
+          h("div", { style:"margin-top:12px" }, covOut)),
+        h("div", { class:"card" }, h("h3", null, "灵敏度与检出限"),
+          h("div", { class:"fields" }, lodS.node, lodSig.node),
+          h("div", { style:"margin-top:12px" }, lodOut)))));
+    areaRun(); lodRun();
+  }});
+
+/* ===========================================================================
+   shell wiring
+   ========================================================================= */
+const main = $("main"), rail = $("rail");
+const built = {};
+let current = null;
+
+const groups = [];
+MODULES.forEach(m => {
+  let g = groups.find(x => x.name === m.group);
+  if (!g) { g = { name: m.group, items: [] }; groups.push(g); }
+  g.items.push(m);
+});
+groups.forEach(g => {
+  rail.appendChild(h("div", { class: "rail-group" }, g.name));
+  g.items.forEach(m => {
+    const b = h("button", { type: "button", "data-id": m.id }, m.name);
+    b.addEventListener("click", () => show(m.id));
+    rail.appendChild(b);
+  });
+});
+
+MODULES.forEach(m => {
+  const panel = h("section", { class: "panel", id: "panel-" + m.id },
+    h("div", { class: "panel-head" }, h("h2", null, m.title), h("p", null, m.desc)));
+  main.appendChild(panel);
+});
+
+function show(id) {
+  current = id;
+  MODULES.forEach(m => {
+    const p = $("panel-" + m.id);
+    p.classList.toggle("on", m.id === id);
+  });
+  rail.querySelectorAll("button[data-id]").forEach(b =>
+    b.setAttribute("aria-current", String(b.getAttribute("data-id") === id)));
+  if (!built[id]) {
+    built[id] = true;
+    const m = MODULES.find(x => x.id === id);
+    const holder = h("div");
+    $("panel-" + id).appendChild(holder);
+    m.build(holder);
+  }
+  try { localStorage.setItem("peiye.tab", id); } catch (e) {}
+}
+
+/* theme */
+function applyTheme(t) {
+  if (t === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", t);
+  $("themeBtn").textContent = t === "auto" ? "主题 自动" : (t === "dark" ? "主题 深色" : "主题 浅色");
+  try { localStorage.setItem("peiye.theme", t); } catch (e) {}
+}
+let theme = "auto";
+try { theme = localStorage.getItem("peiye.theme") || "auto"; } catch (e) {}
+applyTheme(theme);
+$("themeBtn").addEventListener("click", () => {
+  theme = theme === "auto" ? "light" : theme === "light" ? "dark" : "auto";
+  applyTheme(theme);
+});
+
+let start = "prep";
+try { const s = localStorage.getItem("peiye.tab"); if (s && MODULES.some(m => m.id === s)) start = s; } catch (e) {}
+show(start);
+})();
+
+</script>
+
+</body>
+</html>

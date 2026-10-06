@@ -1,0 +1,218 @@
+import { readFileSync } from "node:fs";
+const src = readFileSync(new URL("./src/core.js", import.meta.url), "utf8");
+const CORE = new Function(src + "\nreturn CORE;")();
+
+let pass = 0, fail = 0;
+const near = (a, b, tol = 1e-3) => Math.abs(a - b) <= tol * Math.max(1, Math.abs(b));
+function ok(name, got, want, tol) {
+  const good = typeof want === "number" ? near(got, want, tol ?? 2e-3) : got === want;
+  if (good) { pass++; console.log(`  ok   ${name}  = ${typeof got === "number" ? got.toPrecision(6) : got}`); }
+  else { fail++; console.log(`  FAIL ${name}\n       got  ${got}\n       want ${want}`); }
+}
+function section(t) { console.log("\n" + t); }
+
+const { dilution, prep, moles, stockFromLiquid, molarMass, auto, sig,
+        electrodeArea, randlesSevcik, cottrell, coverage, chargeToMoles,
+        detectionLimit, buffer, predictPH, speciate, logGamma, ladder,
+        series, weighBack, weighError, toBase, fromBase, DIMS } = CORE;
+
+/* ---- 1. the spreadsheet's own numbers (must reproduce exactly) ---------- */
+section("1. 对齐原表格 计算表格.xlsx");
+ok("稀释解 C₂ (mol/L)",  dilution({C1:0.4, V1:1e-5, V2:2e-4}, "C2").value, 0.02);
+ok("  → mM",             fromBase(dilution({C1:0.4,V1:1e-5,V2:2e-4},"C2").value,"conc","mM"), 20);
+ok("  → µM",             fromBase(dilution({C1:0.4,V1:1e-5,V2:2e-4},"C2").value,"conc","µM"), 20000);
+ok("稀释解 V₁ (L)",      dilution({C1:11.75, V2:0.05, C2:0.008}, "V1").value, 3.40425531914894e-5);
+ok("  → µL",             fromBase(dilution({C1:11.75,V2:0.05,C2:0.008},"V1").value,"volume","µL"), 34.0425531914894);
+ok("稀释解 C₁ (mol/L)",  dilution({V1:0.003, V2:0.026, C2:0.1}, "C1").value, 0.866666666666667);
+ok("稀释解 V₂ (L)",      dilution({V1:0.001, C1:9.79, C2:0.5}, "V2").value, 0.01958);
+ok("  → mL",             fromBase(dilution({V1:0.001,C1:9.79,C2:0.5},"V2").value,"volume","mL"), 19.58);
+ok("称量 m=M·C·V (g)",   prep({M:58.44, C:0.866666666667, V:0.05}, "m").value, 2.53240000000097);
+ok("n = m/M (mol)",      moles({m:0.132, M:133.1}, "n").value, 0.000991735537190083);
+ok("C = m/(M·V) (mol/L)",prep({m:0.264, M:133.1, V:0.02}, "C").value, 0.0991735537190083);
+ok("浓硫酸 1000ρw/M",     stockFromLiquid({rho:1.84, w:0.98, M:98.078}).value, 18.3853667489141);
+
+/* ---- 2. formula parser -------------------------------------------------- */
+section("2. 化学式解析 / 摩尔质量");
+const mm = f => molarMass(f).mass;
+ok("NaCl",                mm("NaCl"), 58.44, 2e-4);
+ok("K3[Fe(CN)6]",         mm("K3[Fe(CN)6]"), 329.25, 5e-4);
+ok("CuSO4·5H2O",          mm("CuSO4·5H2O"), 249.68, 5e-4);
+ok("Na2HPO4",             mm("Na2HPO4"), 141.96, 5e-4);
+ok("KH2PO4",              mm("KH2PO4"), 136.08, 5e-4);
+ok("K4[Fe(CN)6]·3H2O",    mm("K4[Fe(CN)6]·3H2O"), 422.39, 5e-4);
+ok("H2SO4",               mm("H2SO4"), 98.07, 5e-4);
+ok("C6H12O6 葡萄糖",       mm("C6H12O6"), 180.16, 5e-4);
+ok("Na2HPO4·12H2O",       mm("Na2HPO4·12H2O"), 358.14, 5e-4);
+ok("C2H3O2Na·3H2O 醋酸钠", mm("C2H3O2Na·3H2O"), 136.08, 5e-4);
+ok("Ru(NH3)6Cl3",         mm("Ru(NH3)6Cl3"), 309.61, 1e-3);
+// alternate hydrate spellings must agree
+ok("CuSO4*5H2O 同值",     mm("CuSO4*5H2O"), mm("CuSO4·5H2O"), 1e-12);
+ok("CuSO4.5H2O 同值",     mm("CuSO4.5H2O"), mm("CuSO4·5H2O"), 1e-12);
+ok("CuSO4·5H₂O 下标",     mm("CuSO4·5H₂O"), mm("CuSO4·5H2O"), 1e-12);
+ok("结晶水不被忽略",       mm("CuSO4·5H2O") > mm("CuSO4") + 89, true);
+// error paths
+const throws = f => { try { molarMass(f); return false; } catch { return true; } };
+ok("Xx 未知元素报错",      throws("Xx2O"), true);
+ok("括号不匹配报错",       throws("K3[Fe(CN)6"), true);
+
+/* ---- 3. units ----------------------------------------------------------- */
+section("3. 单位引擎");
+ok("自动单位 3.404e-5 L", auto(3.40425531914894e-5, "volume").text, "34.04 µL");
+ok("自动单位 0.02 mol/L", auto(0.02, "conc").text, "20 mM");
+ok("自动单位 2.5324 g",   auto(2.53240000000097, "mass").text, "2.532 g");
+ok("自动单位 9.917e-4 mol", auto(0.000991735537190083, "amount").text, "991.7 µmol");
+ok("自动单位 0.5 L",      auto(0.5, "volume").text, "500 mL");
+let roundTripFail = 0;
+for (const dim of Object.keys(DIMS))
+  for (const [u] of DIMS[dim].units)
+    for (const v of [1, 7.3, 1234.5, 0.00042]) {
+      const back = fromBase(toBase(v, dim, u), dim, u);
+      if (Math.abs(back - v) / v > 1e-12) roundTripFail++;
+    }
+ok("全单位往返误差 < 1e-12", roundTripFail, 0);
+ok("mg/mL = g/L",         toBase(1, "massconc", "mg/mL"), toBase(1, "massconc", "g/L"), 1e-12);
+ok("µg/mL = mg/L",        toBase(1, "massconc", "µg/mL"), toBase(1, "massconc", "mg/L"), 1e-12);
+ok("%(w/v) = 10 g/L",     toBase(1, "massconc", "%(w/v)"), 10, 1e-12);
+ok("有效数字 sig(0.0991735,4)", sig(0.0991735537, 4), "0.09917");
+// every dim's canonical unit must actually exist in its own list, and
+// auto-formatting 0 must not fall back to a label that isn't selectable
+let badBase = [], badZero = [];
+for (const dim of Object.keys(DIMS)) {
+  const bu = CORE.baseUnitName(dim);
+  if (!DIMS[dim].units.some(u => u[0] === bu)) badBase.push(dim + ":" + bu);
+  try { CORE.auto(0, dim); } catch (e) { badZero.push(dim + " → " + e.message); }
+  try { fromBase(1, dim, CORE.pickUnit(0, dim)); } catch (e) { badZero.push(dim + " pickUnit(0)"); }
+}
+ok("每个量纲的基准单位都在列表里", badBase.join(",") || "none", "none");
+ok("零值自动格式化不抛错", badZero.join(",") || "none", "none");
+ok("conc 基准单位是 M 而非 mol/L", CORE.baseUnitName("conc"), "M");
+
+/* ---- 4. electrochemistry ------------------------------------------------ */
+section("4. 电化学");
+const A3mm = electrodeArea("disc", { d: 0.3 }).value;      // Ø3 mm in cm
+ok("Ø3 mm 圆盘面积 cm²",  A3mm, 0.0706858, 1e-4);
+ok("矩形 2×5 mm",         electrodeArea("rect", { w:0.2, h:0.5 }).value, 0.1, 1e-12);
+ok("环状 do4 di2 mm",     electrodeArea("ring", { dOut:0.4, dIn:0.2 }).value, Math.PI*(0.16-0.04)/4, 1e-12);
+const ip = randlesSevcik({ n:1, A:A3mm, D:7.6e-6, C:5e-3, v:0.05 }, "ip").value;
+ok("Randles-Ševčík iₚ (A)", ip, 5.863e-5, 3e-3);
+ok("  → µA",              fromBase(ip, "current", "µA"), 58.63, 3e-3);
+ok("  C 单位陷阱：非 58.6 mA", fromBase(ip, "current", "mA") < 1, true);
+ok("RS 反解 D",           randlesSevcik({ n:1, A:A3mm, C:5e-3, v:0.05, ip }, "D").value, 7.6e-6, 1e-6);
+ok("RS 反解 A",           randlesSevcik({ n:1, D:7.6e-6, C:5e-3, v:0.05, ip }, "A").value, A3mm, 1e-6);
+ok("RS 反解 C (mol/L)",   randlesSevcik({ n:1, A:A3mm, D:7.6e-6, v:0.05, ip }, "C").value, 5e-3, 1e-6);
+ok("Cottrell i(1s)",      cottrell({ n:1, A:A3mm, D:7.6e-6, C:5e-3, t:1 }).value,
+                          1*96485.332*A3mm*Math.sqrt(7.6e-6)*5e-6/Math.sqrt(Math.PI), 1e-9);
+ok("Γ = Q/nFA (mol/cm²)", coverage({ Q:1e-6, n:1, A:A3mm }).value, 1e-6/(96485.332*A3mm), 1e-9);
+ok("  → pmol/cm²",        fromBase(coverage({Q:1e-6,n:1,A:A3mm}).value,"surfconc","pmol/cm²"), 146.6, 2e-3);
+ok("n = Q/zF",            chargeToMoles({ Q:96485.332, z:1 }).value, 1, 1e-9);
+ok("LOD = 3σ/S",          detectionLimit({ S:1e-3, sigma:2e-9 }).value, 6e-6, 1e-9);
+
+/* ---- 5. buffers --------------------------------------------------------- */
+section("5. 缓冲液 + Davies 活度校正");
+ok("logγ(z=1, I=0.15)",  logGamma(1, 0.15), -0.1193, 5e-3);
+ok("logγ(z=2, I=0.15)",  logGamma(2, 0.15), -0.4773, 5e-3);
+// phosphate pKa2' at I = 0.15 should land near 6.84 (plan's derivation)
+const spI = speciate(CORE.BUFFERS.phosphate_na, 7.4, 0.15, 25);
+ok("磷酸盐 pKa₂' @I=0.15", spI.pKaApp[1], 6.84, 2e-3);
+ok("理想 pKa₂ @I=0",       speciate(CORE.BUFFERS.phosphate_na, 7.4, 0, 25).pKaApp[1], 7.20, 1e-3);
+
+// back-test: the standard 1× PBS recipe (Na2HPO4 1.44 g/L + KH2PO4 0.24 g/L
+// + 137 mM NaCl + 2.7 mM KCl) measures ~7.4.
+const cB = 1.44 / molarMass("Na2HPO4").mass;      // mol/L
+const cA = 0.24 / molarMass("KH2PO4").mass;
+ok("PBS 配方 Na₂HPO₄ mM", cB * 1000, 10.14, 3e-3);
+ok("PBS 配方 KH₂PO₄ mM",  cA * 1000, 1.764, 3e-3);
+ok("PBS 盐比值",          cB / cA, 5.75, 5e-3);
+const naive = predictPH("phosphate_na", { cAcid:cA, cBase:cB, acidKey:"nah2po4",
+  baseKey:"na2hpo4", addNaCl:0.137, addKCl:0.0027, davies:false });
+const corr  = predictPH("phosphate_na", { cAcid:cA, cBase:cB, acidKey:"nah2po4",
+  baseKey:"na2hpo4", addNaCl:0.137, addKCl:0.0027, davies:true });
+console.log(`       裸 H-H → pH ${naive.pH.toFixed(2)}   Davies → pH ${corr.pH.toFixed(2)}   I = ${corr.I.toFixed(3)} M`);
+ok("裸 H-H 预测 ≈ 7.96",   naive.pH, 7.96, 3e-3);
+ok("Davies 预测 ≈ 7.59",   corr.pH, 7.59, 3e-3);
+ok("Davies 把误差从 0.56 降到 ~0.19",
+   Math.abs(corr.pH - 7.4) < Math.abs(naive.pH - 7.4) - 0.3, true);
+ok("离子强度 ≈ 0.172 M",   corr.I, 0.172, 2e-2);
+
+// recipe round-trip: buffer() masses must reproduce the requested pH
+const rec = buffer({ system:"phosphate_na", pH:7.40, Ctotal:0.1, Vfinal:1,
+                     acidKey:"nah2po4", baseKey:"na2hpo4", T:25 });
+console.log(`       0.1 M pH 7.4 PBS/L → ${rec.items.map(i=>i.reagent.label+" "+sig(i.mass,4)+" g").join("  +  ")}  (I=${sig(rec.I,3)} M)`);
+const rt = predictPH("phosphate_na", { cAcid:rec.items[0].conc, cBase:rec.items[1].conc,
+  acidKey:"nah2po4", baseKey:"na2hpo4", davies:true });
+ok("配方回代 pH 自洽",     rt.pH, 7.40, 2e-3);
+ok("两盐浓度加和 = C_tot", rec.items[0].conc + rec.items[1].conc, 0.1, 1e-9);
+ok("质量为正",             rec.items.every(i => i.mass > 0), true);
+
+// Tris temperature coefficient: pKa 8.06 @25 °C → 7.72 @37 °C
+const tris25 = speciate(CORE.BUFFERS.tris, 8, 0, 25).pKaApp[0];
+const tris37 = speciate(CORE.BUFFERS.tris, 8, 0, 37).pKaApp[0];
+ok("Tris pKa @25 °C",     tris25, 8.06, 1e-3);
+ok("Tris pKa @37 °C",     tris37, 7.724, 2e-3);
+ok("Tris 温度偏移 0.34",   tris25 - tris37, 0.336, 1e-2);
+// acetate: 1→0 charge pair shifts the other way from phosphate
+ok("醋酸 pKa' @I=0.15",   speciate(CORE.BUFFERS.acetate, 4.8, 0.15, 25).pKaApp[0], 4.641, 3e-3);
+ok("Tris pKa' @I=0.15",   speciate(CORE.BUFFERS.tris, 8, 0.15, 25).pKaApp[0], 8.179, 3e-3);
+// out-of-range pair must refuse rather than return a negative mass
+let refused = false, refusedMsg = "";
+try { buffer({ system:"acetate", pH:9.0, Ctotal:0.1, Vfinal:1,
+               acidKey:"hac", baseKey:"naac_3h" }); }
+catch (e) { refused = true; refusedMsg = e.message; }
+ok("醋酸盐 @pH 9 被拒绝",  refused, true);
+console.log("       拒绝信息：" + refusedMsg);
+let refused2 = false;
+try { buffer({ system:"tris", pH:5.0, Ctotal:0.1, Vfinal:1 }); } catch { refused2 = true; }
+ok("Tris @pH 5 被拒绝",    refused2, true);
+// ...but a pH just outside the pKa±1 core must still work, with a warning
+const edge = buffer({ system:"acetate", pH:5.6, Ctotal:0.1, Vfinal:1 });
+ok("醋酸盐 @pH 5.6 仍可配", edge.items.every(i => i.mass > 0), true);
+// glacial acetic acid is pipetted, not weighed
+ok("冰醋酸给出体积而非只给质量", edge.items[0].volume > 0, true);
+ok("冰醋酸体积 = m/(ρ·w)",  edge.items[0].volume,
+   edge.items[0].mass/(1.049*0.995)/1000, 1e-9);
+// every system must produce a self-consistent recipe mid-range
+for (const key of Object.keys(CORE.BUFFERS)) {
+  const s = CORE.BUFFERS[key];
+  const mid = (s.range[0] + s.range[1]) / 2;
+  const r = buffer({ system:key, pH:mid, Ctotal:0.05, Vfinal:0.5 });
+  const b = predictPH(key, { cAcid:r.items[0].conc, cBase:r.items[1].conc,
+            acidKey:r.items[0].reagent.key, baseKey:r.items[1].reagent.key, davies:true });
+  ok(`${s.name} pH ${mid} 回代`, b.pH, mid, 2e-3);
+}
+
+/* ---- 6. ladders & weigh-back ------------------------------------------- */
+section("6. 梯度稀释 / 称量回算");
+const lad = ladder({ Cstock:0.1, targets:[1e-3, 2e-3, 5e-3], Vfinal:0.01, mode:"direct" });
+ok("直接稀释 5 mM 取 µL", fromBase(lad[0].Vtransfer, "volume", "µL"), 500, 1e-9);
+ok("直接稀释 1 mM 取 µL", fromBase(lad[2].Vtransfer, "volume", "µL"), 100, 1e-9);
+ok("补稀释液 = 终体积−取样", lad[0].Vdiluent, 0.01 - lad[0].Vtransfer, 1e-12);
+const ser = ladder({ Cstock:0.1, targets:[1e-3, 1e-2], Vfinal:0.01, mode:"serial" });
+ok("逐级：第1级 10 mM 取 µL", fromBase(ser[0].Vtransfer,"volume","µL"), 1000, 1e-9);
+ok("逐级：第2级从第1级取",    ser[1].fromC, 1e-2, 1e-12);
+ok("逐级：第2级 1 mM 取 µL",  fromBase(ser[1].Vtransfer,"volume","µL"), 1000, 1e-9);
+ok("等比序列 6 点",        series({ lo:1e-4, hi:1e-2, n:6, kind:"log" }).length, 6);
+ok("等比首尾",             series({ lo:1e-4, hi:1e-2, n:6, kind:"log" })[5], 1e-2, 1e-9);
+ok("等差中点",             series({ lo:0, hi:10, n:3, kind:"linear" })[1], 5, 1e-9);
+ok("等差可含 0 空白点",     series({ lo:0, hi:10, n:3, kind:"linear" })[0], 0, 1e-12);
+let logZero = false;
+try { series({ lo:0, hi:10, n:3, kind:"log" }); } catch { logZero = true; }
+ok("等比拒绝 0 起点",       logZero, true);
+const ladBlank = ladder({ Cstock:0.1, targets:[0, 1e-3, 5e-3], Vfinal:0.01, mode:"direct" });
+ok("空白点保留为一行",      ladBlank.length, 3);
+ok("空白点取样 0",          ladBlank[2].Vtransfer, 0, 1e-12);
+ok("空白点全是稀释液",      ladBlank[2].Vdiluent, 0.01, 1e-12);
+ok("空白点排在最后",        ladBlank[2].blank, true);
+let overshoot = false;
+try { ladder({ Cstock:1e-3, targets:[1e-2], Vfinal:0.01, mode:"direct" }); } catch { overshoot = true; }
+ok("目标超过母液时报错",   overshoot, true);
+
+const wb = weighBack({ M:58.44, m_actual:2.5400, V_target:0.05, C_target:0.866666666667 });
+ok("回算实际浓度",         wb.C_actual, 2.54/(58.44*0.05), 1e-9);
+ok("回算偏差 %",           wb.deviation, (2.54/2.53240000000097 - 1)*100, 2e-3);
+ok("回算该定容到 (L)",     wb.V_needed, 2.54/(58.44*0.866666666667), 1e-9);
+ok("天平 0.1 mg 在 10 mg 上 = 1 %", weighError(0.010, 0.1).relative, 1, 1e-9);
+ok("天平 0.1 mg 在 1 mg 上 = 10 %", weighError(0.001, 0.1).relative, 10, 1e-9);
+
+/* ---- summary ------------------------------------------------------------ */
+console.log(`\n${"─".repeat(60)}\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

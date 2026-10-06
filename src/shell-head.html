@@ -1,0 +1,335 @@
+<title>配液台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* ---------- tokens: light is the bare :root, dark redefined twice -------- */
+:root{
+  --bg:#F2F6F5; --surface:#FFFFFF; --surface-2:#E9EFEE; --surface-3:#DFE8E6;
+  --border:#D3DEDC; --border-strong:#B6C6C3;
+  --ink:#0E1A19; --ink-2:#364946; --muted:#647976;
+  --accent:#0B6A66; --accent-ink:#FFFFFF; --accent-soft:#D9EBE9; --accent-line:#8FC4C0;
+  --warn:#8A5705; --warn-soft:#FBEFD9; --warn-line:#DEB871;
+  --danger:#9C2F27; --danger-soft:#FAE6E3; --danger-line:#DFA49D;
+  --shadow:0 1px 2px rgba(14,26,25,.06), 0 8px 24px -12px rgba(14,26,25,.18);
+  --radius:10px; --radius-sm:7px;
+  --sans:"Archivo","Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"IBM Plex Mono","Cascadia Mono",ui-monospace,"PingFang SC","Microsoft YaHei",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C1312; --surface:#121C1B; --surface-2:#182422; --surface-3:#1F2D2B;
+    --border:#263634; --border-strong:#38504D;
+    --ink:#E4EDEB; --ink-2:#B5C6C3; --muted:#829996;
+    --accent:#52BFB6; --accent-ink:#04201F; --accent-soft:#17312F; --accent-line:#2E605C;
+    --warn:#E0A94E; --warn-soft:#2E2412; --warn-line:#5E4A20;
+    --danger:#E8897E; --danger-soft:#301916; --danger-line:#5E312B;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C1312; --surface:#121C1B; --surface-2:#182422; --surface-3:#1F2D2B;
+  --border:#263634; --border-strong:#38504D;
+  --ink:#E4EDEB; --ink-2:#B5C6C3; --muted:#829996;
+  --accent:#52BFB6; --accent-ink:#04201F; --accent-soft:#17312F; --accent-line:#2E605C;
+  --warn:#E0A94E; --warn-soft:#2E2412; --warn-line:#5E4A20;
+  --danger:#E8897E; --danger-soft:#301916; --danger-line:#5E312B;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--sans); font-size:15px; line-height:1.5;
+  -webkit-text-size-adjust:100%;
+}
+h1,h2,h3{margin:0; text-wrap:balance; font-weight:600; letter-spacing:-.01em}
+button,input,select{font:inherit; color:inherit}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+
+/* ---------- shell ------------------------------------------------------- */
+.app{max-width:1180px; margin:0 auto; padding:0 16px 72px}
+
+header.top{
+  display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+  padding:22px 0 16px; border-bottom:1px solid var(--border); margin-bottom:18px;
+}
+header.top h1{font-size:19px; letter-spacing:-.02em}
+header.top .sub{color:var(--muted); font-size:13px; flex:1 1 220px}
+.theme-btn{
+  background:var(--surface); border:1px solid var(--border); color:var(--ink-2);
+  border-radius:var(--radius-sm); padding:6px 11px; cursor:pointer;
+  font-size:12.5px; font-family:var(--mono);
+}
+.theme-btn:hover{border-color:var(--border-strong); color:var(--ink)}
+
+.layout{display:grid; grid-template-columns:186px minmax(0,1fr); gap:26px; align-items:start}
+@media (max-width:860px){ .layout{grid-template-columns:minmax(0,1fr); gap:16px} }
+
+/* ---------- module rail ------------------------------------------------- */
+nav.rail{position:sticky; top:16px; display:flex; flex-direction:column; gap:3px}
+.rail-group{
+  font-size:10.5px; letter-spacing:.11em; 
+  color:var(--muted); font-weight:600; padding:14px 8px 5px;
+}
+.rail-group:first-child{padding-top:2px}
+.rail button{
+  display:block; width:100%; text-align:left; cursor:pointer;
+  background:none; border:0; border-radius:var(--radius-sm);
+  padding:7px 10px; font-size:14px; color:var(--ink-2);
+}
+.rail button:hover{background:var(--surface-2); color:var(--ink)}
+.rail button[aria-current="true"]{background:var(--accent); color:var(--accent-ink); font-weight:600}
+@media (max-width:860px){
+  nav.rail{
+    position:sticky; top:0; z-index:20; flex-direction:row; gap:4px; overflow-x:auto;
+    background:var(--bg); padding:8px 16px; margin:0 -16px;
+    border-bottom:1px solid var(--border); scrollbar-width:none;
+  }
+  nav.rail::-webkit-scrollbar{display:none}
+  .rail-group{display:none}
+  .rail button{width:auto; white-space:nowrap; padding:7px 13px; border:1px solid var(--border); background:var(--surface)}
+  .rail button[aria-current="true"]{border-color:var(--accent)}
+}
+
+/* ---------- panels ------------------------------------------------------ */
+.panel{display:none}
+.panel.on{display:block}
+.panel-head{margin-bottom:16px}
+.panel-head h2{font-size:17px}
+.panel-head p{margin:5px 0 0; color:var(--muted); font-size:13.5px; max-width:66ch}
+
+.cols{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,340px); gap:20px; align-items:start}
+@media (max-width:980px){ .cols{grid-template-columns:minmax(0,1fr)} }
+
+.card{
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:16px;
+}
+.card + .card{margin-top:14px}
+.card h3{
+  font-size:11px; letter-spacing:.1em; 
+  color:var(--muted); font-weight:600; margin-bottom:13px;
+}
+
+/* ---------- fields ------------------------------------------------------ */
+.fields{display:flex; flex-direction:column; gap:12px}
+.field{display:flex; flex-direction:column; gap:5px}
+.field > .lab{font-size:13px; color:var(--ink-2); display:flex; gap:7px; align-items:baseline}
+.field > .lab .sym{font-family:var(--mono); color:var(--accent); font-weight:500}
+.inrow{display:flex; gap:0}
+.inrow input{
+  flex:1 1 auto; min-width:0; background:var(--surface); color:var(--ink);
+  border:1px solid var(--border); border-right:0;
+  border-radius:var(--radius-sm) 0 0 var(--radius-sm);
+  padding:9px 11px; font-family:var(--mono); font-size:15px;
+  font-variant-numeric:tabular-nums;
+}
+.inrow input.solo{border-right:1px solid var(--border); border-radius:var(--radius-sm)}
+.inrow input:hover{border-color:var(--border-strong)}
+.inrow input:focus{outline:none; border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent)}
+.inrow select{
+  flex:0 0 auto; background:var(--surface-2); color:var(--ink-2);
+  border:1px solid var(--border); border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+  padding:9px 8px; font-family:var(--mono); font-size:13.5px; cursor:pointer;
+}
+.inrow select:hover{color:var(--ink)}
+.field.solved .inrow input{
+  background:var(--accent-soft); border-color:var(--accent-line);
+  color:var(--accent); font-weight:600; cursor:default;
+}
+.field.solved .inrow select{background:var(--accent-soft); border-color:var(--accent-line)}
+.hint{font-size:12px; color:var(--muted)}
+.hint code{font-family:var(--mono); font-size:11.5px}
+
+/* iOS Safari zooms the whole page when a focused control is under 16px, and
+   never zooms back out. Touch devices get 16px controls; pointer devices keep
+   the denser 15px/13.5px sizing. */
+@media (pointer:coarse){
+  .inrow input, .inrow select, .drawer-search input, .drawer-search input[type="search"]{
+    font-size:16px;
+  }
+  .inrow select{padding-inline:10px}
+}
+
+/* ---------- segmented solve-for selector -------------------------------- */
+.seg{display:flex; gap:0; margin-bottom:14px; flex-wrap:wrap}
+.seg .seg-lab{
+  font-size:11px; letter-spacing:.1em;  color:var(--muted);
+  font-weight:600; align-self:center; margin-right:10px;
+}
+.seg button{
+  background:var(--surface-2); border:1px solid var(--border); border-right-width:0;
+  padding:6px 13px; cursor:pointer; font-family:var(--mono); font-size:13px; color:var(--ink-2);
+}
+.seg button:first-of-type{border-radius:var(--radius-sm) 0 0 var(--radius-sm)}
+.seg button:last-of-type{border-radius:0 var(--radius-sm) var(--radius-sm) 0; border-right-width:1px}
+.seg button:hover{background:var(--surface-3); color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600}
+
+/* ---------- result card ------------------------------------------------- */
+.result{
+  background:var(--surface); border:1px solid var(--border);
+  border-top:2px solid var(--accent); border-radius:var(--radius);
+  padding:16px; position:sticky; top:16px;
+}
+@media (max-width:980px){ .result{position:static} }
+.result .cap{
+  font-size:11px; letter-spacing:.1em; 
+  color:var(--muted); font-weight:600;
+}
+.big{
+  font-family:var(--mono); font-size:30px; font-weight:600; letter-spacing:-.02em;
+  margin:8px 0 2px; color:var(--ink); line-height:1.15; overflow-wrap:anywhere;
+  font-variant-numeric:tabular-nums;
+}
+.big .u{font-size:19px; color:var(--muted); font-weight:500; margin-left:3px}
+.say{font-size:13.5px; color:var(--ink-2); margin-top:9px; line-height:1.55}
+.say b{color:var(--accent); font-family:var(--mono); font-weight:600}
+
+.work{
+  margin-top:14px; padding-top:13px; border-top:1px solid var(--border);
+  font-family:var(--mono); font-size:12.5px; color:var(--ink-2); line-height:1.75;
+  overflow-x:auto;
+}
+.work .eq{color:var(--ink); font-weight:500}
+.work .sb{color:var(--muted); display:block; white-space:nowrap}
+
+.equiv{margin-top:13px; padding-top:12px; border-top:1px solid var(--border)}
+.equiv table{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12.5px}
+.equiv td{padding:3px 0; font-variant-numeric:tabular-nums}
+.equiv td:first-child{color:var(--muted); width:7.5em}
+.equiv td:last-child{text-align:right; color:var(--ink-2)}
+
+/* ---------- notes / warnings -------------------------------------------- */
+.note{
+  border-radius:var(--radius-sm); padding:10px 12px; font-size:13px; line-height:1.55;
+  border:1px solid var(--border); background:var(--surface-2); color:var(--ink-2);
+  margin-top:12px;
+}
+.note.warn{background:var(--warn-soft); border-color:var(--warn-line); color:var(--warn)}
+.note.danger{background:var(--danger-soft); border-color:var(--danger-line); color:var(--danger)}
+.note.info{background:var(--accent-soft); border-color:var(--accent-line); color:var(--accent)}
+.note b{font-weight:600}
+.note code{font-family:var(--mono); font-size:12px}
+.note + .note{margin-top:8px}
+
+/* ---------- tables ------------------------------------------------------ */
+.tablewrap{overflow-x:auto; margin-top:4px}
+table.data{width:100%; border-collapse:collapse; font-size:13px}
+table.data th{
+  text-align:left; font-size:10.5px; letter-spacing:.08em; 
+  color:var(--muted); font-weight:600; padding:0 10px 7px 0; white-space:nowrap;
+  border-bottom:1px solid var(--border);
+}
+table.data td{
+  padding:8px 10px 8px 0; border-bottom:1px solid var(--border);
+  font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap;
+}
+table.data td:first-child{color:var(--muted)}
+table.data tr:last-child td{border-bottom:0}
+table.data tr.flag td{color:var(--warn)}
+table.data tr.blankrow td{color:var(--muted)}
+table.data .em{color:var(--accent); font-weight:600}
+
+/* ---------- reagent drawer ---------------------------------------------- */
+.lib-btn{
+  background:var(--surface-2); border:1px solid var(--border); color:var(--ink-2);
+  border-radius:var(--radius-sm); padding:5px 10px; cursor:pointer; font-size:12.5px;
+}
+.lib-btn:hover{border-color:var(--accent); color:var(--accent)}
+.scrim{
+  position:fixed; inset:0; background:rgba(8,16,15,.42); z-index:40;
+  display:none;
+}
+.scrim.on{display:block}
+.drawer{
+  position:fixed; top:0; right:0; bottom:0; width:min(420px,92vw); z-index:41;
+  background:var(--surface); border-left:1px solid var(--border);
+  display:none; flex-direction:column; box-shadow:var(--shadow);
+}
+.drawer.on{display:flex}
+.drawer-head{padding:16px 16px 12px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center}
+.drawer-head h3{font-size:14px; flex:1; text-transform:none; letter-spacing:0; color:var(--ink); margin:0}
+.drawer-head button{background:none; border:0; cursor:pointer; color:var(--muted); font-size:22px; line-height:1; padding:2px 6px}
+.drawer-head button:hover{color:var(--ink)}
+.drawer-search{padding:12px 16px; border-bottom:1px solid var(--border)}
+.drawer-search input{
+  width:100%; background:var(--surface-2); border:1px solid var(--border); color:var(--ink);
+  border-radius:var(--radius-sm); padding:9px 11px; font-size:14px;
+}
+.drawer-search input:focus{outline:none; border-color:var(--accent)}
+.drawer-list{overflow-y:auto; flex:1; padding:6px 0}
+.lib-group{
+  font-size:10.5px; letter-spacing:.1em;  color:var(--muted);
+  font-weight:600; padding:14px 16px 6px;
+}
+.lib-item{
+  display:block; width:100%; text-align:left; background:none; border:0; cursor:pointer;
+  padding:9px 16px; border-bottom:1px solid var(--border);
+}
+.lib-item:hover{background:var(--surface-2)}
+.lib-item .nm{font-size:13.5px; color:var(--ink)}
+.lib-item .fm{font-family:var(--mono); font-size:12px; color:var(--muted); margin-top:2px; display:flex; gap:10px; flex-wrap:wrap}
+.lib-item .fm .mw{color:var(--accent)}
+.lib-item .no{font-size:12px; color:var(--warn); margin-top:3px}
+
+/* ---------- misc -------------------------------------------------------- */
+.row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end}
+.row > *{flex:1 1 130px; min-width:0}
+.row > .shrink{flex:0 0 auto}
+.chiprow{display:flex; gap:6px; flex-wrap:wrap; margin-top:4px}
+.chip{
+  background:var(--surface-2); border:1px solid var(--border); color:var(--ink-2);
+  border-radius:100px; padding:4px 11px; cursor:pointer; font-size:12.5px; font-family:var(--mono);
+}
+.chip:hover{border-color:var(--accent); color:var(--accent)}
+.chip[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+.err{color:var(--danger); font-size:13.5px; line-height:1.55}
+.mono{font-family:var(--mono)}
+.tiny{font-size:12px; color:var(--muted); line-height:1.6}
+.breakdown{font-family:var(--mono); font-size:12.5px; width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
+.breakdown td{padding:3px 0; border-bottom:1px solid var(--border)}
+.breakdown td:nth-child(2),.breakdown td:nth-child(3){text-align:right; color:var(--ink-2)}
+.breakdown td:last-child{text-align:right; color:var(--muted); width:5em}
+label.check{display:flex; gap:8px; align-items:center; font-size:13px; color:var(--ink-2); cursor:pointer}
+label.check input{accent-color:var(--accent); width:16px; height:16px; cursor:pointer}
+footer.foot{
+  margin-top:34px; padding-top:16px; border-top:1px solid var(--border);
+  color:var(--muted); font-size:12px; line-height:1.7;
+}
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1>配液台</h1>
+    <span class="sub">电化学实验溶液配制 · 稀释 · 单位换算</span>
+    <button class="theme-btn" id="themeBtn" type="button">主题</button>
+  </header>
+
+  <div class="layout">
+    <nav class="rail" id="rail"></nav>
+    <main id="main"></main>
+  </div>
+
+  <footer class="foot">
+    摩尔质量按 IUPAC 2021 标准原子量计算。缓冲液配比为理论值，已按 Davies 式做活度校正，
+    但残余误差仍有 ±0.1–0.2 pH —— <b>配好必须用 pH 计实测，并用 HCl / NaOH 微调</b>。
+    浓酸稀释一律酸入水。
+  </footer>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="试剂库">
+  <div class="drawer-head">
+    <h3>试剂库</h3>
+    <button type="button" id="drawerClose" aria-label="关闭">&times;</button>
+  </div>
+  <div class="drawer-search">
+    <input type="search" id="libSearch" placeholder="搜名称、化学式或缩写…" autocomplete="off">
+  </div>
+  <div class="drawer-list" id="libList"></div>
+</aside>
+
+<script>
