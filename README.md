@@ -43,14 +43,18 @@ python build.py     # src/ → index.html（单文件自包含）
 node test.mjs       # 110 条断言，跑的是 src/core.js，即实际发布的那份代码
 ```
 
-改完重新发布：
+改完重新发布 —— 已接 Netlify 持续部署，**push 即发布**：
 
 ```
 python build.py
 node test.mjs                      # 必须全过再发
-netlify deploy --prod --dir .
 git add -A && git commit -m "..." && git push
 ```
+
+推到 `main` 会自动触发 Netlify 构建，约 30 秒生效。
+
+不要再用 `netlify deploy --prod --dir .`：它上传的是本地工作区文件，绕过 Git，
+会让线上内容和仓库脱节，下次 push 又被覆盖回去。
 
 - `src/core.js` —— 纯计算层，无 DOM 依赖，是唯一放公式的地方
 - `src/ui.js` —— 界面层，只负责取值、格式化和渲染
