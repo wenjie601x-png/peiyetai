@@ -346,6 +346,103 @@ function stampFile() {
 const MODULES = [];
 function mod(def) { MODULES.push(def); }
 
+
+/* ---- 0. 文字输入 --------------------------------------------------------- */
+mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说你要配什么",
+  desc: "用一句话描述需求，自动匹配计算。这是本地规则解析，不是 AI —— 认得出的句式会把公式写给你核对，认不出就明说缺什么，不会编数字。",
+  build(root) {
+    const ta = h("textarea", { class: "ask-input", rows: "3", spellcheck: "false",
+      placeholder: "例如：配 20 mL 1% 壳聚糖，溶在 1% 乙酸里" });
+    const out = h("div");
+    let last = null;
+
+    const EXAMPLES = [
+      "配 20 mL 1% 壳聚糖，在 1% 乙酸中",
+      "配 50 mL 10 mM NaCl",
+      "用 K3[Fe(CN)6] 配 100 mL 5 mM",
+      "从 1 M 母液配 50 mL 10 mM，取多少",
+      "配 500 mL 0.1 M PBS pH 7.4",
+      "配 100 mL 5 mg/mL BSA"
+    ];
+
+    function render() {
+      out.innerHTML = "";
+      const text = ta.value.trim();
+      if (!text) { last = null; return; }
+      let r;
+      try { r = C.askText(text); }
+      catch (e) { out.appendChild(h("div", { class: "err" }, "解析出错：" + e.message)); return; }
+      last = r;
+
+      // what it understood — shown first so a misread is caught before the numbers
+      const seen = [];
+      for (const k in (r.echo || {})) {
+        const v = r.echo[k];
+        if (v == null || (Array.isArray(v) && !v.length)) continue;
+        seen.push(h("div", { class: "echo-row" },
+          h("span", { class: "echo-k" }, k),
+          h("span", { class: "echo-v" }, Array.isArray(v) ? v.join("、") : String(v))));
+      }
+      out.appendChild(h("div", { class: "card" },
+        h("h3", null, "它听懂的内容"),
+        seen.length ? h("div", { class: "echo" }, seen)
+                    : h("div", { class: "tiny" }, "没抽取到任何数量"),
+        h("div", { class: "tiny", style: "margin-top:9px" },
+          "对不上就说明句子被误读了 —— 改写一下，或者直接用左边对应的模块。")));
+
+      if (!r.ok) {
+        out.appendChild(h("div", { class: "card" },
+          h("h3", null, "还差什么"),
+          h("div", { class: "fields" },
+            (r.missing || []).map(m => h("div", { class: "note warn", html: m })))));
+        return;
+      }
+
+      const body = h("div", { class: "card" }, h("div", { class: "card-head" },
+        h("h3", null, r.title || "结果"),
+        recButton(() => last && last.ok ? {
+          module: "文字输入 · " + (last.title || ""),
+          inputs: [["原始描述", text]],
+          tableTitle: "配制",
+          table: { head: ["操作", "物质", "用量"],
+                   rows: last.items.map(i => [i.how, i.what, i.amount]) },
+          notes: (last.warnings || []).concat(last.notes || []).map(plain)
+        } : null)));
+      const tbl = h("table", { class: "data" },
+        h("thead", null, h("tr", null, ["操作", "物质", "用量", "依据"].map(t => h("th", null, t)))),
+        h("tbody", null, r.items.map(i => h("tr", null,
+          h("td", null, i.how),
+          h("td", { style: "color:var(--ink)" }, i.what),
+          h("td", { class: "em" }, i.amount),
+          h("td", null, i.formula || "")))));
+      body.appendChild(h("div", { class: "tablewrap" }, tbl));
+      r.items.filter(i => i.note).forEach(i =>
+        body.appendChild(mkNote({ kind: "", text: "<b>" + i.what + "</b>：" + i.note })));
+      (r.warnings || []).forEach(w => body.appendChild(mkNote({ kind: "warn", text: w })));
+      (r.notes || []).forEach(n => body.appendChild(mkNote({ kind: "", text: n })));
+      out.appendChild(body);
+    }
+
+    ta.addEventListener("input", render);
+    const chips = h("div", { class: "chiprow" }, EXAMPLES.map(e => {
+      const b = h("button", { class: "chip", type: "button" }, e);
+      b.addEventListener("click", () => { ta.value = e; render(); ta.focus(); });
+      return b;
+    }));
+
+    root.appendChild(h("div", null,
+      h("div", { class: "card" },
+        ta,
+        h("div", { class: "tiny", style: "margin-top:10px", html:
+          "能认的：体积（µL/mL/L）、摩尔浓度（<b>大写 M</b>：nM/µM/mM/M）、百分比（%、%(w/v)、%(v/v)）、" +
+          "质量浓度（mg/mL、µg/mL、g/L、ppm）、摩尔质量（g/mol、Da、kDa）、pH、化学式、试剂库里的名字。" }),
+        h("div", { class: "tiny", style: "margin-top:6px", html:
+          "小写 <code>mm</code> / <code>nm</code> 当作长度不当作浓度 —— 浓度请写大写 M。" }),
+        chips),
+      out));
+    render();
+  }});
+
 /* ---- 1. 配制（固体 → 溶液） ------------------------------------------- */
 mod({ id: "prep", group: "配液", name: "配制", title: "配制溶液 · 称取质量",
   desc: "m = M · C · V。填三个，第四个自动算。摩尔质量可以从试剂库一键取，也可以在「分子量」页用化学式算。",
@@ -1393,7 +1490,7 @@ $("themeBtn").addEventListener("click", () => {
 bumpRailBadge();
 recListeners.push(bumpRailBadge);
 
-let start = "prep";
+let start = "ask";
 try { const s = localStorage.getItem("peiye.tab"); if (s && MODULES.some(m => m.id === s)) start = s; } catch (e) {}
 show(start);
 })();

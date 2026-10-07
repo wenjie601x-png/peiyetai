@@ -273,6 +273,63 @@ ok("导出含两条记录", doc.includes("[1] 配制溶液") && doc.includes("[2
 ok("导出含安全声明", doc.includes("pH 计实测"), true);
 ok("空记录不报错",   formatRecords([], Date.now()).includes("还没有记录"), true);
 
+/* ---- 8. 自然语言解析 ---------------------------------------------------- */
+section("8. 文字输入解析");
+const A = t => CORE.askText(t);
+
+// the user's own sentence, verbatim
+const chi = A("配20ml的1%壳聚糖，在乙酸中，乙酸1%，壳聚糖 mol wt 50,000-190,000 Da");
+ok("壳聚糖例子可解析",     chi.ok, true);
+ok("  识别两个组分",       chi.items.length, 2, 1e-12);
+ok("  壳聚糖 1% w/v→200mg", chi.items[0].amount, "200 mg");
+ok("  乙酸 1% v/v→200µL",   chi.items[1].amount, "200 µL");
+ok("  固体默认 w/v",        /按 <b>w\/v<\/b>/.test(chi.warnings.join("")), true);
+ok("  液体默认 v/v",        /按 <b>v\/v<\/b>/.test(chi.warnings.join("")), true);
+ok("  指出分子量不参与计算", /用不到摩尔质量/.test(chi.notes.join("")), true);
+
+// %(w/v) is 1 g per 100 mL — check the arithmetic independently
+ok("1% w/v 的 20 mL = 0.2 g", 1 / 100 * 20, 0.2, 1e-12);
+
+const na = A("配 50 mL 10 mM NaCl");
+ok("摩尔浓度例子",         na.ok, true);
+ok("  NaCl 10 mM/50 mL",   na.items[0].amount, "29.22 mg");
+ok("  自动查到摩尔质量",    /58\.4/.test(na.notes.join("")), true);
+
+const fe = A("用K3[Fe(CN)6]配100mL 5mM");
+ok("化学式直接识别",       fe.items[0].amount, "164.6 mg");
+
+const dil = A("从 1 M 母液配 50 mL 10 mM，取多少");
+ok("稀释例子",             dil.items[0].amount, "500 µL");
+ok("  给出补液量",         /49\.5 mL/.test(dil.items[1].formula), true);
+
+const buf = A("配 500 mL 0.1 M PBS pH 7.4");
+ok("缓冲液例子",           buf.ok, true);
+ok("  两种盐",             buf.items.length, 2, 1e-12);
+ok("  NaH2PO4 1.212 g",    buf.items[0].amount, "1.212 g");
+ok("  必须实测 pH 的警告",  /pH 计实测/.test(buf.warnings.join("")), true);
+
+// refusing is a feature: these must NOT invent an answer
+const vague = A("帮我配点东西");
+ok("看不懂时不瞎猜",       vague.ok, false);
+ok("  并说明怎么写",       /试试写成/.test(vague.missing.join("")), true);
+const noVol = A("配 10 mM NaCl");
+ok("缺体积时报缺",         noVol.ok, false);
+ok("  点名缺体积",         /体积/.test(noVol.missing.join("")), true);
+const polyMolar = A("配 20 mL 1 mM 壳聚糖，mol wt 50,000-190,000 Da");
+ok("聚合物按摩尔浓度被拒绝", polyMolar.ok, false);
+ok("  说明范围跨多少倍",    /倍/.test(polyMolar.missing.join("")), true);
+
+// unit-case discipline: lower-case "mm" is millimetre, not millimolar
+const mmLower = A("配 50 mL 10 mm NaCl");
+ok("小写 mm 不当作 mM",    mmLower.ok, false);
+
+// echo must report what was understood, so a misread is catchable
+ok("回显体积",             chi.echo.体积[0], "20 mL");
+ok("回显试剂",             chi.echo.识别到的试剂.join(","), "壳聚糖,冰醋酸");
+ok("回显不出现负摩尔质量",  chi.echo.摩尔质量.every(x => !/^-/.test(x)), true);
+ok("缓冲液回显 pH",         buf.echo.pH, "7.4");
+ok("缓冲液回显体系",        buf.echo.缓冲体系, "磷酸盐 (Na)");
+
 /* ---- summary ------------------------------------------------------------ */
 console.log(`\n${"─".repeat(60)}\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
