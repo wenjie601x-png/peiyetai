@@ -1311,7 +1311,9 @@ function formatRecords(recs, nowMs) {
 }
 
 
-/* ---------- 11. natural-language request parser --------------------------- */
+/* ---------- 11. natural-language request parser --------------------------
+   Spliced in from src/parser.js at assembly time (build.py and test.mjs both
+   do it) so there is exactly one copy of the parser source.             */
 /* ============================================================================
    Natural-language request parser.
 
@@ -1373,7 +1375,7 @@ const UNIT_PATTERNS = [
 function extractQuantities(text) {
   const out = [];
   // never treat a leading "-" as a sign: volumes/concentrations/masses are all
-  // positive, so a dash is always a range separator ("50,000-190,000 Da")
+  // positive here, so a dash is always a range separator ("50,000-190,000 Da")
   const re = /(\d+(?:[,，]\d{3})*(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*/g;
   let m;
   while ((m = re.exec(text)) !== null) {
@@ -1587,9 +1589,8 @@ function interpret(rawText, deps) {
   if (!totalV) missing.push("配制体积（例如 50 mL）");
   if (!concs.length) missing.push("目标浓度（例如 10 mM）");
   // A "50,000-190,000 Da" range tokenises as a bare number plus "190,000 Da";
-  // taking that upper bound as if it were a definite molar mass is exactly the
-  // confidently-wrong answer this parser exists to avoid. Refuse the molar
-  // route outright whenever a range is present.
+  // taking that upper bound as a definite molar mass is exactly the
+  // confidently-wrong answer this parser exists to avoid. Refuse outright.
   if (mwRange) {
     return Object.assign(base, { ok: false, missing: [
       `给的是摩尔质量范围（${mwRange.raw}），上下限差 ` +
@@ -1725,12 +1726,167 @@ function ask(text, deps) {
   return plan.ok ? solveRequest(plan, deps) : plan;
 }
 
+/* ---------- LLM output → the same plan shape -----------------------------
+   The model only reads the sentence; it never does arithmetic. Its JSON is
+   funnelled through the identical validation the local parser uses, so the
+   refusals (molar-mass ranges, missing volume) and the percent-basis defaults
+   behave the same whichever front end produced the numbers.                */
+
+/** Map whatever unit spelling the model emitted onto a canonical one. */
+function resolveUnit(raw, dim, deps) {
+  const s = String(raw == null ? "" : raw).trim().replace(/[μμµ]/g, "µ");
+  if (!s) return null;
+  const list = deps.DIMS[dim] ? deps.DIMS[dim].units : [];
+  for (const [u] of list) if (u === s) return u;
+  for (const [u] of list) if (u.toLowerCase() === s.toLowerCase()) return u;
+  for (const [unit, d, pat] of UNIT_PATTERNS) {
+    if (d !== dim) continue;
+    if (pat.test(s)) return unit;
+  }
+  return null;
+}
+
+function qty(obj, dim, deps) {
+  if (!obj || typeof obj.value !== "number" || !isFinite(obj.value)) return null;
+  const unit = resolveUnit(obj.unit, dim, deps);
+  if (!unit) return null;
+  return { value: obj.value, unit, base: obj.value * deps.factorOf(dim, unit) };
+}
+
+function findReagentByName(name, deps) {
+  if (!name) return null;
+  const hits = matchReagents(String(name), deps.REAGENTS);
+  return hits.length ? hits[0].r : null;
+}
+
+function planFromLLM(p, deps) {
+  p = p || {};
+  const echo = {
+    "AI 的理解": p.understood || null,
+    体积: p.volume ? [p.volume.value + " " + p.volume.unit] : [],
+    浓度: p.concentration ? [p.concentration.value + " " + p.concentration.unit] : [],
+    母液: p.stock ? [p.stock.value + " " + p.stock.unit] : [],
+    百分比: (p.components || []).map(c =>
+      c.percent + "% " + (c.name || "") + (c.basis ? " (" + c.basis + ")" : "")),
+    摩尔质量: p.molarMass ? [p.molarMass.value + " " + p.molarMass.unit] : [],
+    分子量范围: p.molarMassRange
+      ? `${p.molarMassRange.lo}-${p.molarMassRange.hi} ${p.molarMassRange.unit || "Da"}` : null,
+    pH: p.pH != null ? String(p.pH) : null,
+    化学式: p.formula || null,
+    来源: "DeepSeek 解析"
+  };
+  const base = { echo, intent: p.intent, viaLLM: true };
+  const missing = [];
+  const V = qty(p.volume, "volume", deps);
+  const mwRange = p.molarMassRange && isFinite(p.molarMassRange.lo) && isFinite(p.molarMassRange.hi)
+    ? { lo: p.molarMassRange.lo, hi: p.molarMassRange.hi,
+        raw: `${p.molarMassRange.lo}-${p.molarMassRange.hi} ${p.molarMassRange.unit || "Da"}` }
+    : null;
+
+  if (!p.intent || p.intent === "unknown")
+    return Object.assign(base, { ok: false, missing: [
+      "AI 也没看懂这句话要做哪种计算。" + (p.understood ? "它的理解是：" + p.understood : "")] });
+
+  if (p.intent === "buffer") {
+    const Ct = qty(p.concentration, "conc", deps);
+    if (!V) missing.push("配制体积");
+    if (!Ct) missing.push("缓冲总浓度");
+    if (p.pH == null) missing.push("目标 pH");
+    const sys = deps.BUFFERS[p.bufferSystem] ? p.bufferSystem : "phosphate_na";
+    if (missing.length) return Object.assign(base, { ok: false, missing });
+    return Object.assign(base, { ok: true, route: "buffer",
+      params: { system: sys, pH: Number(p.pH), Ctotal: Ct.base, Vfinal: V.base },
+      summary: `配 ${V.value} ${V.unit} 的 ${Ct.value} ${Ct.unit} ` +
+               `${deps.BUFFERS[sys].name} 缓冲液，pH ${p.pH}` });
+  }
+
+  if (p.intent === "dilute") {
+    const C2 = qty(p.concentration, "conc", deps), C1 = qty(p.stock, "conc", deps);
+    if (!V) missing.push("配制体积");
+    if (!C1) missing.push("母液浓度");
+    if (!C2) missing.push("目标浓度");
+    if (missing.length) return Object.assign(base, { ok: false, missing });
+    return Object.assign(base, { ok: true, route: "dilute",
+      params: { C1: C1.base, C2: C2.base, V2: V.base },
+      summary: `从 ${C1.value} ${C1.unit} 母液配 ${V.value} ${V.unit} 的 ${C2.value} ${C2.unit}` });
+  }
+
+  if (p.intent === "percent") {
+    if (!V) missing.push("配制体积");
+    const comps = (p.components || []).filter(c => isFinite(c && c.percent));
+    if (!comps.length) missing.push("百分浓度和对应的物质");
+    if (missing.length) return Object.assign(base, { ok: false, missing });
+    return Object.assign(base, { ok: true, route: "percent",
+      params: { Vfinal: V.base, mwRange,
+        components: comps.map(c => {
+          const reagent = findReagentByName(c.name, deps);
+          const liquid = !!(reagent && reagent.rho);
+          const basis = /^(w\/v|v\/v|w\/w)$/.test(c.basis || "")
+            ? c.basis : (liquid ? "v/v" : "w/v");
+          return { reagent: reagent || { n: c.name || "（未识别）" },
+                   percent: c.percent, basis, basisAssumed: !c.basis };
+        }) },
+      summary: `配 ${V.value} ${V.unit}，` +
+        comps.map(c => `${c.percent}% ${c.name || "（未识别）"}`).join(" + ") });
+  }
+
+  if (p.intent === "massconc") {
+    const c = qty(p.concentration, "massconc", deps);
+    if (!V) missing.push("配制体积");
+    if (!c) missing.push("质量浓度（如 5 mg/mL）");
+    if (missing.length) return Object.assign(base, { ok: false, missing });
+    return Object.assign(base, { ok: true, route: "massconc",
+      params: { Vfinal: V.base, c: c.base, reagent: findReagentByName(p.components &&
+        p.components[0] && p.components[0].name || p.formula, deps) },
+      summary: `配 ${V.value} ${V.unit} 的 ${c.value} ${c.unit}` });
+  }
+
+  // molar — the same refusal as the local parser, applied to the model's output
+  if (mwRange) {
+    return Object.assign(base, { ok: false, missing: [
+      `给的是摩尔质量范围（${mwRange.raw}），上下限差 ` +
+      `${deps.sig(mwRange.hi / mwRange.lo, 2)} 倍 —— 按摩尔浓度配，称出来的量也会差这么多倍，` +
+      `这个数没有意义。聚合物请改用质量百分比或 mg/mL。`] });
+  }
+  const C = qty(p.concentration, "conc", deps);
+  if (!V) missing.push("配制体积");
+  if (!C) missing.push("目标浓度");
+  let M = null, Msource = null;
+  const mm = qty(p.molarMass, "molar", deps);
+  if (mm) { M = mm.base; Msource = "你给的摩尔质量"; }
+  let reagent = findReagentByName(
+    (p.components && p.components[0] && p.components[0].name) || p.formula, deps);
+  if (M == null && p.formula) {
+    try { M = deps.molarMass(p.formula).mass; Msource = "化学式 " + p.formula; } catch (e) {}
+  }
+  if (M == null && reagent && reagent.f) {
+    try { M = deps.molarMass(reagent.f).mass; Msource = reagent.n + " 的化学式 " + reagent.f; }
+    catch (e) {}
+  }
+  if (M == null) missing.push("摩尔质量（或给出化学式）");
+  if (missing.length) return Object.assign(base, { ok: false, missing });
+  return Object.assign(base, { ok: true, route: "molar",
+    params: { M, Msource, C: C.base, V: V.base, reagent },
+    summary: `配 ${V.value} ${V.unit} 的 ${C.value} ${C.unit}` +
+             (reagent ? " " + reagent.n : (p.formula ? " " + p.formula : "")) });
+}
+
 
 /* ---------- 9. exports ---------------------------------------------------- */
+/** LLM params in, the same renderable answer out as the local path. */
+function solveFromLLM(params) {
+  const deps = {
+    REAGENTS: REAGENTS, BUFFERS: BUFFERS, DIMS: DIMS, molarMass: molarMass,
+    factorOf: factorOf, auto: auto, sig: sig, buffer: buffer, weighError: weighError
+  };
+  const plan = planFromLLM(params, deps);
+  return plan.ok ? solveRequest(plan, deps) : plan;
+}
+
 /** One call: a sentence in, a renderable answer out. */
 function askText(text) {
   return ask(text, {
-    REAGENTS: REAGENTS, BUFFERS: BUFFERS, molarMass: molarMass,
+    REAGENTS: REAGENTS, BUFFERS: BUFFERS, DIMS: DIMS, molarMass: molarMass,
     factorOf: factorOf, auto: auto, sig: sig, buffer: buffer,
     weighError: weighError
   });
@@ -1745,6 +1901,7 @@ return {
   logGamma, speciate, buffer, predictPH,
   dispWidth, padTo, stamp, wrapCols, formatRecord, formatRecords,
   normalizeQuery, extractQuantities, matchReagents, interpret, solveRequest,
+  planFromLLM, resolveUnit, solveFromLLM,
   electrodeArea, randlesSevcik, cottrell, coverage, chargeToMoles,
   currentDensity, detectionLimit
 };
@@ -2108,7 +2265,54 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
     const ta = h("textarea", { class: "ask-input", rows: "3", spellcheck: "false",
       placeholder: "例如：配 20 mL 1% 壳聚糖，溶在 1% 乙酸里" });
     const out = h("div");
-    let last = null;
+    let last = null, mode = "local", busy = false;
+    try { mode = localStorage.getItem("peiye.askmode") || "local"; } catch (e) {}
+
+    const modeBox = h("div");
+    function drawMode() {
+      modeBox.innerHTML = "";
+      modeBox.appendChild(segmented("解析", [
+        { key: "local", label: "本地规则" }, { key: "ai", label: "AI (DeepSeek)" }
+      ], mode, k => {
+        mode = k;
+        try { localStorage.setItem("peiye.askmode", k); } catch (e) {}
+        drawMode(); render();
+      }));
+    }
+
+    /** AI path: the model only reads the sentence, CORE still does the maths. */
+    async function askAI(text) {
+      busy = true; render();
+      let r;
+      try {
+        const resp = await fetch("/api/ask", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+        const data = await resp.json().catch(() => null);
+        if (!resp.ok || !data || !data.ok) {
+          busy = false;
+          showError((data && data.error) || `服务端返回 ${resp.status}`);
+          return;
+        }
+        r = C.solveFromLLM(data.params);
+      } catch (e) {
+        busy = false;
+        showError("连不上解析服务：" + e.message + "（离线时请切回「本地规则」）");
+        return;
+      }
+      busy = false;
+      last = r;
+      paint(r, text);
+    }
+    function showError(msg) {
+      out.innerHTML = "";
+      out.appendChild(h("div", { class: "card" },
+        h("h3", null, "AI 解析没成功"),
+        h("div", { class: "note danger", html: esc(msg) }),
+        h("div", { class: "tiny", style: "margin-top:9px" },
+          "可以切到「本地规则」试试 —— 常见句式本地就能认。")));
+    }
 
     const EXAMPLES = [
       "配 20 mL 1% 壳聚糖，在 1% 乙酸中",
@@ -2119,14 +2323,32 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
       "配 100 mL 5 mg/mL BSA"
     ];
 
+    let timer = null;
     function render() {
-      out.innerHTML = "";
       const text = ta.value.trim();
-      if (!text) { last = null; return; }
+      if (!text) { out.innerHTML = ""; last = null; return; }
+      if (mode === "ai") {
+        out.innerHTML = "";
+        out.appendChild(h("div", { class: "card" },
+          h("div", { class: "tiny" }, busy ? "正在问 DeepSeek…" : "改完后点下面的按钮发给 AI 解析。"),
+          busy ? null : (() => {
+            const b = h("button", { class: "chip", type: "button", style: "margin-top:10px" },
+              "用 AI 解析这句话");
+            b.addEventListener("click", () => askAI(text));
+            return b;
+          })()));
+        return;
+      }
+      out.innerHTML = "";
       let r;
       try { r = C.askText(text); }
       catch (e) { out.appendChild(h("div", { class: "err" }, "解析出错：" + e.message)); return; }
       last = r;
+      paint(r, text);
+    }
+
+    function paint(r, text) {
+      out.innerHTML = "";
 
       // what it understood — shown first so a misread is caught before the numbers
       const seen = [];
@@ -2177,7 +2399,12 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
       out.appendChild(body);
     }
 
-    ta.addEventListener("input", render);
+    drawMode();
+    ta.addEventListener("input", () => {
+      // in AI mode typing must not fire a request per keystroke
+      if (mode === "ai") { render(); return; }
+      render();
+    });
     const chips = h("div", { class: "chiprow" }, EXAMPLES.map(e => {
       const b = h("button", { class: "chip", type: "button" }, e);
       b.addEventListener("click", () => { ta.value = e; render(); ta.focus(); });
@@ -2186,6 +2413,7 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
 
     root.appendChild(h("div", null,
       h("div", { class: "card" },
+        modeBox,
         ta,
         h("div", { class: "tiny", style: "margin-top:10px", html:
           "能认的：体积（µL/mL/L）、摩尔浓度（<b>大写 M</b>：nM/µM/mM/M）、百分比（%、%(w/v)、%(v/v)）、" +

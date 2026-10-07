@@ -1,5 +1,9 @@
 import { readFileSync } from "node:fs";
-const src = readFileSync(new URL("./src/core.js", import.meta.url), "utf8");
+// assemble exactly as build.py does, so the tests exercise the shipped code
+const coreSrc = readFileSync(new URL("./src/core.js", import.meta.url), "utf8");
+const parserSrc = readFileSync(new URL("./src/parser.js", import.meta.url), "utf8");
+if (!coreSrc.includes("/* @@PARSER@@ */")) throw new Error("core.js 丢了 @@PARSER@@ 标记");
+const src = coreSrc.replace("/* @@PARSER@@ */", parserSrc);
 const CORE = new Function(src + "\nreturn CORE;")();
 
 let pass = 0, fail = 0;
@@ -329,6 +333,46 @@ ok("回显试剂",             chi.echo.识别到的试剂.join(","), "壳聚糖
 ok("回显不出现负摩尔质量",  chi.echo.摩尔质量.every(x => !/^-/.test(x)), true);
 ok("缓冲液回显 pH",         buf.echo.pH, "7.4");
 ok("缓冲液回显体系",        buf.echo.缓冲体系, "磷酸盐 (Na)");
+
+/* ---- 9. LLM 参数桥接 ----------------------------------------------------- */
+section("9. AI 解析结果走同一套校验");
+const L = p => CORE.solveFromLLM(p);
+
+// the model reads the sentence; CORE still does every bit of the arithmetic
+const lm = L({ intent:"molar", volume:{value:50,unit:"mL"},
+               concentration:{value:10,unit:"mM"}, formula:"NaCl" });
+ok("AI→摩尔路线可解",      lm.ok, true);
+ok("  结果与本地一致",      lm.items[0].amount, "29.22 mg");
+
+const lp = L({ intent:"percent", volume:{value:20,unit:"mL"},
+  components:[{name:"壳聚糖",percent:1,basis:"w/v"},{name:"乙酸",percent:1,basis:"v/v"}] });
+ok("AI→百分比路线",        lp.items.length, 2, 1e-12);
+ok("  壳聚糖 200 mg",       lp.items[0].amount, "200 mg");
+ok("  乙酸 200 µL",         lp.items[1].amount, "200 µL");
+
+const lb = L({ intent:"buffer", volume:{value:500,unit:"mL"},
+  concentration:{value:0.1,unit:"M"}, pH:7.4, bufferSystem:"phosphate_na" });
+ok("AI→缓冲液路线",        lb.items[0].amount, "1.212 g");
+ok("  仍带实测 pH 警告",    /pH 计实测/.test(lb.warnings.join("")), true);
+
+// the safety refusals must survive the LLM path too
+const lr = L({ intent:"molar", volume:{value:20,unit:"mL"},
+  concentration:{value:1,unit:"mM"},
+  molarMassRange:{lo:50000,hi:190000,unit:"Da"} });
+ok("AI 给范围时同样被拒绝",  lr.ok, false);
+ok("  说明差多少倍",        /3\.8 倍/.test(lr.missing.join("")), true);
+
+const lu = L({ intent:"unknown", understood:"没看懂" });
+ok("AI 说不懂就不算",       lu.ok, false);
+const lmissing = L({ intent:"molar", concentration:{value:10,unit:"mM"}, formula:"NaCl" });
+ok("AI 漏了体积也报缺",      lmissing.ok, false);
+ok("  点名缺体积",          /体积/.test(lmissing.missing.join("")), true);
+
+// unit spellings the model might emit
+ok("resolveUnit 认 ml",     CORE.resolveUnit("ml", "volume", { DIMS: CORE.DIMS }), "mL");
+ok("resolveUnit 认 uL",     CORE.resolveUnit("uL", "volume", { DIMS: CORE.DIMS }), "µL");
+ok("resolveUnit 认 mol/L",  CORE.resolveUnit("mol/L", "conc", { DIMS: CORE.DIMS }), "M");
+ok("resolveUnit 拒绝乱填",   CORE.resolveUnit("banana", "volume", { DIMS: CORE.DIMS }), null);
 
 /* ---- summary ------------------------------------------------------------ */
 console.log(`\n${"─".repeat(60)}\n${pass} passed, ${fail} failed`);

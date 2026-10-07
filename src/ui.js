@@ -354,7 +354,54 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
     const ta = h("textarea", { class: "ask-input", rows: "3", spellcheck: "false",
       placeholder: "例如：配 20 mL 1% 壳聚糖，溶在 1% 乙酸里" });
     const out = h("div");
-    let last = null;
+    let last = null, mode = "local", busy = false;
+    try { mode = localStorage.getItem("peiye.askmode") || "local"; } catch (e) {}
+
+    const modeBox = h("div");
+    function drawMode() {
+      modeBox.innerHTML = "";
+      modeBox.appendChild(segmented("解析", [
+        { key: "local", label: "本地规则" }, { key: "ai", label: "AI (DeepSeek)" }
+      ], mode, k => {
+        mode = k;
+        try { localStorage.setItem("peiye.askmode", k); } catch (e) {}
+        drawMode(); render();
+      }));
+    }
+
+    /** AI path: the model only reads the sentence, CORE still does the maths. */
+    async function askAI(text) {
+      busy = true; render();
+      let r;
+      try {
+        const resp = await fetch("/api/ask", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+        const data = await resp.json().catch(() => null);
+        if (!resp.ok || !data || !data.ok) {
+          busy = false;
+          showError((data && data.error) || `服务端返回 ${resp.status}`);
+          return;
+        }
+        r = C.solveFromLLM(data.params);
+      } catch (e) {
+        busy = false;
+        showError("连不上解析服务：" + e.message + "（离线时请切回「本地规则」）");
+        return;
+      }
+      busy = false;
+      last = r;
+      paint(r, text);
+    }
+    function showError(msg) {
+      out.innerHTML = "";
+      out.appendChild(h("div", { class: "card" },
+        h("h3", null, "AI 解析没成功"),
+        h("div", { class: "note danger", html: esc(msg) }),
+        h("div", { class: "tiny", style: "margin-top:9px" },
+          "可以切到「本地规则」试试 —— 常见句式本地就能认。")));
+    }
 
     const EXAMPLES = [
       "配 20 mL 1% 壳聚糖，在 1% 乙酸中",
@@ -365,14 +412,32 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
       "配 100 mL 5 mg/mL BSA"
     ];
 
+    let timer = null;
     function render() {
-      out.innerHTML = "";
       const text = ta.value.trim();
-      if (!text) { last = null; return; }
+      if (!text) { out.innerHTML = ""; last = null; return; }
+      if (mode === "ai") {
+        out.innerHTML = "";
+        out.appendChild(h("div", { class: "card" },
+          h("div", { class: "tiny" }, busy ? "正在问 DeepSeek…" : "改完后点下面的按钮发给 AI 解析。"),
+          busy ? null : (() => {
+            const b = h("button", { class: "chip", type: "button", style: "margin-top:10px" },
+              "用 AI 解析这句话");
+            b.addEventListener("click", () => askAI(text));
+            return b;
+          })()));
+        return;
+      }
+      out.innerHTML = "";
       let r;
       try { r = C.askText(text); }
       catch (e) { out.appendChild(h("div", { class: "err" }, "解析出错：" + e.message)); return; }
       last = r;
+      paint(r, text);
+    }
+
+    function paint(r, text) {
+      out.innerHTML = "";
 
       // what it understood — shown first so a misread is caught before the numbers
       const seen = [];
@@ -423,7 +488,12 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
       out.appendChild(body);
     }
 
-    ta.addEventListener("input", render);
+    drawMode();
+    ta.addEventListener("input", () => {
+      // in AI mode typing must not fire a request per keystroke
+      if (mode === "ai") { render(); return; }
+      render();
+    });
     const chips = h("div", { class: "chiprow" }, EXAMPLES.map(e => {
       const b = h("button", { class: "chip", type: "button" }, e);
       b.addEventListener("click", () => { ta.value = e; render(); ta.focus(); });
@@ -432,6 +502,7 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
 
     root.appendChild(h("div", null,
       h("div", { class: "card" },
+        modeBox,
         ta,
         h("div", { class: "tiny", style: "margin-top:10px", html:
           "能认的：体积（µL/mL/L）、摩尔浓度（<b>大写 M</b>：nM/µM/mM/M）、百分比（%、%(w/v)、%(v/v)）、" +

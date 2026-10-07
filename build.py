@@ -9,6 +9,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 R = lambda *p: io.open(os.path.join(HERE, *p), encoding="utf-8").read()
 
 head, core, ui = R("src", "shell-head.html"), R("src", "core.js"), R("src", "ui.js")
+# src/parser.js is the single source for the NL parser; splice it into core
+if "/* @@PARSER@@ */" not in core:
+    raise SystemExit("ERROR: core.js lost its @@PARSER@@ marker")
+core = core.replace("/* @@PARSER@@ */", R("src", "parser.js"))
 if "</script" in (core + ui).lower():
     raise SystemExit("ERROR: a literal </script> in the JS would break the inline bundle")
 
