@@ -221,6 +221,7 @@ function libButton(onPick) {
    Lab records accumulate across calculations and survive reload. Every
    browser-storage access is wrapped: private windows and thumbnailers throw. */
 const REC_KEY = "peiye.records";
+const GROUP_KEY = "peiye.group";
 let RECORDS = [];
 try {
   const raw = localStorage.getItem(REC_KEY);
@@ -228,22 +229,96 @@ try {
 } catch (e) { RECORDS = []; }
 if (!Array.isArray(RECORDS)) RECORDS = [];
 
+/** Current experiment / batch label, applied to new records. */
+let CURRENT_GROUP = "";
+try { CURRENT_GROUP = localStorage.getItem(GROUP_KEY) || ""; } catch (e) {}
+function setGroup(g) {
+  CURRENT_GROUP = g;
+  try { localStorage.setItem(GROUP_KEY, g); } catch (e) {}
+}
+
 const recListeners = [];
-function recSave() {
-  try { localStorage.setItem(REC_KEY, JSON.stringify(RECORDS)); } catch (e) {}
+/* Cloud sync state: "off" until the first attempt, then "ok" | "local" | "busy".
+   Local storage stays the source of truth for rendering so the page works with
+   no network; the cloud is a mirror that makes the history follow you between
+   the bench phone and the desk. */
+let SYNC = { state: "off", msg: "", at: 0 };
+function setSync(state, msg) {
+  SYNC = { state, msg: msg || "", at: Date.now() };
   recListeners.forEach(fn => { try { fn(); } catch (e) {} });
 }
+
+function recSave(push) {
+  try { localStorage.setItem(REC_KEY, JSON.stringify(RECORDS)); } catch (e) {}
+  recListeners.forEach(fn => { try { fn(); } catch (e) {} });
+  if (push !== false) recPush(push);
+}
+
+/** Send specific records (or everything) up. Failure is non-fatal: the local
+    copy already holds them, and the next pull will reconcile. */
+async function recPush(only) {
+  const list = Array.isArray(only) ? only : RECORDS;
+  if (!list.length) return;
+  try {
+    const r = await fetch("/api/records", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ records: list })
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    setSync("ok", "已同步");
+  } catch (e) {
+    setSync("local", "只存在本机（" + e.message + "）");
+  }
+}
+
+/** Merge the cloud copy in. Union by id — records are append-only, so a union
+    can never lose one, whichever device wrote it. */
+async function recPull() {
+  setSync("busy", "正在同步…");
+  try {
+    const r = await fetch("/api/records");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    const remote = Array.isArray(data.records) ? data.records : [];
+    const byId = new Map();
+    remote.forEach(x => { if (x && x.id) byId.set(x.id, x); });
+    const localOnly = [];
+    RECORDS.forEach(x => {
+      if (!x || !x.id) return;
+      if (!byId.has(x.id)) { byId.set(x.id, x); localOnly.push(x); }
+    });
+    RECORDS = Array.from(byId.values()).sort((a, b) => (a.t || 0) - (b.t || 0));
+    try { localStorage.setItem(REC_KEY, JSON.stringify(RECORDS)); } catch (e) {}
+    setSync("ok", "已同步 " + RECORDS.length + " 条");
+    if (localOnly.length) recPush(localOnly);      // push what only we had
+  } catch (e) {
+    setSync("local", "云端读取失败，只用本机记录");
+  }
+}
+
 function recAdd(rec) {
   rec.id = String(Date.now()) + Math.random().toString(36).slice(2, 7);
   rec.t = Date.now();
+  if (CURRENT_GROUP) rec.group = CURRENT_GROUP;
   RECORDS.push(rec);
-  recSave();
+  recSave([rec]);
 }
 function recRemove(id) {
   const i = RECORDS.findIndex(r => r.id === id);
-  if (i >= 0) { RECORDS.splice(i, 1); recSave(); }
+  if (i < 0) return;
+  RECORDS.splice(i, 1);
+  recSave(false);
+  fetch("/api/records?id=" + encodeURIComponent(id), { method: "DELETE" })
+    .then(() => setSync("ok", "已同步"))
+    .catch(() => setSync("local", "云端删除失败，刷新后可能复现"));
 }
-function recClear() { RECORDS = []; recSave(); }
+function recClear() {
+  RECORDS = [];
+  recSave(false);
+  fetch("/api/records?id=__all__", { method: "DELETE" })
+    .then(() => setSync("ok", "已清空"))
+    .catch(() => setSync("local", "云端清空失败"));
+}
 
 /** innerHTML in a note/say → plain text for the record. */
 function plain(html) {
@@ -273,8 +348,31 @@ function flash(btn, text, bad) {
   setTimeout(() => { btn.textContent = old; btn.classList.remove("bad"); }, 1400);
 }
 
+/* Each replayable module registers how to restore a snapshot. Modules build
+   lazily, so a replay must switch tabs first (which builds) and only then
+   restore. */
+const RESTORERS = {};
+function applyFields(F, fields) {
+  if (!fields) return;
+  for (const k in fields) {
+    if (!F[k] || !F[k].input) continue;
+    F[k].input.value = fields[k].value;
+    if (F[k].sel && fields[k].unit) F[k].sel.value = fields[k].unit;
+  }
+}
+
+/** Snapshot the raw field state so a record can be loaded back and tweaked. */
+function captureFields(F) {
+  const out = {};
+  for (const k in F) {
+    if (!F[k] || !F[k].input) continue;
+    out[k] = { value: F[k].input.value, unit: F[k].unit() };
+  }
+  return out;
+}
+
 /** Build a record from whatever the result card last rendered. */
-function stdRecord(res, moduleName, inputsFn) {
+function stdRecord(res, moduleName, inputsFn, rerunFn) {
   return () => {
     const last = res.last;
     if (!last) return null;
@@ -290,7 +388,8 @@ function stdRecord(res, moduleName, inputsFn) {
       say: plain(last.say),
       notes: (last.notes || [])
         .map(n => plain(typeof n === "string" ? n : (n && n.text)))
-        .filter(Boolean)
+        .filter(Boolean),
+      rerun: rerunFn ? rerunFn() : null
     };
   };
 }
@@ -376,7 +475,10 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
       try {
         const resp = await fetch("/api/ask", {
           method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ text })
+          // the last few records let "上次那个再配一次" resolve to real numbers
+          body: JSON.stringify({ text, history: RECORDS.slice(-8).map(r => ({
+            t: r.t, group: r.group, module: r.module,
+            inputs: r.inputs, result: r.result })) })
         });
         const data = await resp.json().catch(() => null);
         if (!resp.ok || !data || !data.ok) {
@@ -467,6 +569,7 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
         h("h3", null, r.title || "结果"),
         recButton(() => last && last.ok ? {
           module: "文字输入 · " + (last.title || ""),
+          rerun: { module: "ask", text, mode },
           inputs: [["原始描述", text]],
           tableTitle: "配制",
           table: { head: ["操作", "物质", "用量"],
@@ -488,6 +591,12 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
       out.appendChild(body);
     }
 
+    RESTORERS.ask = r => {
+      if (r.mode) { mode = r.mode; try { localStorage.setItem("peiye.askmode", mode); } catch (e) {} }
+      drawMode();
+      ta.value = r.text || "";
+      render();
+    };
     drawMode();
     ta.addEventListener("input", () => {
       // in AI mode typing must not fire a request per keystroke
@@ -586,7 +695,12 @@ mod({ id: "prep", group: "配液", name: "配制", title: "配制溶液 · 称�
     }
     res.onRecord = stdRecord(res, "配制溶液 · 称取质量",
       () => ["M","C","V","m"].map(k =>
-        [F[k].spec.label + (F[k].spec.sym ? " " + F[k].spec.sym : ""), F[k].text()]));
+        [F[k].spec.label + (F[k].spec.sym ? " " + F[k].spec.sym : ""), F[k].text()]),
+      () => ({ module: "prep", unknown, fields: captureFields(F) }));
+    RESTORERS.prep = r => {
+      if (r.unknown) { unknown = r.unknown; drawSeg(); sync(); }
+      applyFields(F, r.fields); run();
+    };
     drawSeg(); sync();
     root.appendChild(h("div", { class: "cols" },
       h("div", null,
@@ -659,7 +773,12 @@ mod({ id: "dilute", group: "配液", name: "稀释", title: "稀释 · C₁V₁ 
     }
     res.onRecord = stdRecord(res, "稀释 · C1V1 = C2V2",
       () => ["C1","V1","C2","V2"].map(k =>
-        [F[k].spec.label + " " + F[k].spec.sym, F[k].text()]));
+        [F[k].spec.label + " " + F[k].spec.sym, F[k].text()]),
+      () => ({ module: "dilute", unknown, fields: captureFields(F) }));
+    RESTORERS.dilute = r => {
+      if (r.unknown) { unknown = r.unknown; drawSeg(); sync(); }
+      applyFields(F, r.fields); run();
+    };
     drawSeg(); sync();
     root.appendChild(h("div", { class: "cols" },
       h("div", { class: "card" }, seg, h("div", { class: "fields" },
@@ -906,7 +1025,12 @@ mod({ id: "weigh", group: "配液", name: "称量回算", title: "称量回算",
     }
     res.onRecord = stdRecord(res, "称量回算", () => [
       ["摩尔质量 M", Mm.text()], ["目标浓度 C_目标", Ct.text()],
-      ["计划定容体积 V_目标", Vt.text()], ["实际称到 m_实际", ma.text()]]);
+      ["计划定容体积 V_目标", Vt.text()], ["实际称到 m_实际", ma.text()]],
+      () => ({ module: "weigh",
+               fields: captureFields({ M: Mm, C: Ct, V: Vt, ma: ma }) }));
+    RESTORERS.weigh = r => {
+      applyFields({ M: Mm, C: Ct, V: Vt, ma: ma }, r.fields); run();
+    };
     root.appendChild(h("div", { class:"cols" },
       h("div", { class:"card" }, h("div", { class:"fields" },
         Mm.node, Ct.node, Vt.node, ma.node)),
@@ -1018,6 +1142,14 @@ mod({ id: "buffer", group: "配液", name: "缓冲液", title: "缓冲液 · 按
       }
     }
     fillReagents();
+    RESTORERS.buffer = r => {
+      if (r.sysKey && C.BUFFERS[r.sysKey]) { sysKey = r.sysKey; sysSel.value = sysKey; }
+      acidKey = r.acidKey || null; baseKey = r.baseKey || null;
+      fillReagents();
+      if (typeof r.davies === "boolean") { davies = r.davies; dav.checked = davies; }
+      applyFields({ pH, T, Ct, Vf, nacl, kcl }, r.fields);
+      run();
+    };
     root.appendChild(h("div", null,
       h("div", { class:"cols" },
         h("div", null,
@@ -1048,6 +1180,8 @@ mod({ id: "buffer", group: "配液", name: "缓冲液", title: "缓冲液 · 按
                 const last = res.last;
                 return { module: "缓冲液 · " + C.BUFFERS[sysKey].name,
                   tableTitle: "配制表", table: t,
+                  rerun: { module: "buffer", sysKey, acidKey, baseKey, davies,
+                           fields: captureFields({ pH, T, Ct, Vf, nacl, kcl }) },
                   inputs: [["目标 pH", pH.input.value], ["使用温度", T.input.value + " °C"],
                            ["缓冲总浓度", Ct.text()], ["配制体积", Vf.text()],
                            ["另加 NaCl", nacl.text()], ["另加 KCl", kcl.text()],
@@ -1109,7 +1243,12 @@ mod({ id: "mass", group: "工具", name: "分子量", title: "分子量 · 试�
         res.show({ error:e.message });
       }
     }
-    res.onRecord = stdRecord(res, "分子量", () => [["化学式", f.input.value.trim()]]);
+    res.onRecord = stdRecord(res, "分子量", () => [["化学式", f.input.value.trim()]],
+      () => ({ module: "mass", fields: { f: { value: f.input.value, unit: "" } } }));
+    RESTORERS.mass = r => {
+      if (r.fields && r.fields.f) f.input.value = r.fields.f.value;
+      run();
+    };
     root.appendChild(h("div", { class:"cols" },
       h("div", null,
         h("div", { class:"card" }, h("div", { class:"fields" }, f.node), chips),
@@ -1425,25 +1564,35 @@ mod({ id: "echem", group: "工具", name: "电化学", title: "电化学计算",
 
 /* ---- 10. 实验记录 -------------------------------------------------------- */
 mod({ id: "records", group: "记录", name: "实验记录", title: "实验记录",
-  desc: "每个模块的结果卡下面都有「记一笔」。攒好之后在这里一次性复制或导出成 .txt，直接贴进实验记录本。记录存在这台设备的浏览器里，刷新和关页面都不会丢。",
+  desc: "每个模块的结果卡下面都有「记一笔」。记录同步到云端，手机和电脑共用一份；断网时仍写本机，联网后自动合并。",
   build(root) {
     const list = h("div");
-    const bar = h("div", { class: "chiprow", style: "margin-bottom:14px" });
+    const bar = h("div", { class: "chiprow", style: "margin-bottom:12px" });
     const preview = h("pre", { class: "rec-pre" });
+    const syncLine = h("div", { class: "tiny" });
+    const search = h("input", { type: "search", class: "rec-search",
+      placeholder: "搜试剂、模块、实验名…", autocomplete: "off" });
+    const groupIn = h("input", { type: "text", class: "rec-group-in",
+      placeholder: "例如 LOx 电极 10-07", value: CURRENT_GROUP, autocomplete: "off" });
+    groupIn.addEventListener("input", () => setGroup(groupIn.value.trim()));
 
     const copyBtn = h("button", { class: "chip", type: "button" }, "复制全部");
     copyBtn.addEventListener("click", async () => {
-      if (!RECORDS.length) { flash(copyBtn, "还没有记录", true); return; }
-      const ok = await copyText(C.formatRecords(RECORDS, Date.now()));
+      const recs = filtered();
+      if (!recs.length) { flash(copyBtn, "没有记录", true); return; }
+      const ok = await copyText(C.formatRecords(recs, Date.now()));
       flash(copyBtn, ok ? "已复制 ✓" : "复制失败，请手动选中下方文本", !ok);
     });
     const dlBtn = h("button", { class: "chip", type: "button" }, "下载 .txt");
     dlBtn.addEventListener("click", () => {
-      if (!RECORDS.length) { flash(dlBtn, "还没有记录", true); return; }
-      const ok = downloadText(C.formatRecords(RECORDS, Date.now()),
+      const recs = filtered();
+      if (!recs.length) { flash(dlBtn, "没有记录", true); return; }
+      const ok = downloadText(C.formatRecords(recs, Date.now()),
                               "配液记录-" + stampFile() + ".txt");
       flash(dlBtn, ok ? "已下载 ✓" : "此环境不允许下载，请用「复制全部」", !ok);
     });
+    const syncBtn = h("button", { class: "chip", type: "button" }, "重新同步");
+    syncBtn.addEventListener("click", () => recPull());
     const clrBtn = h("button", { class: "chip", type: "button" }, "清空");
     let armed = false;
     clrBtn.addEventListener("click", () => {
@@ -1452,40 +1601,115 @@ mod({ id: "records", group: "记录", name: "实验记录", title: "实验记录
                     setTimeout(() => { armed = false; }, 2000); return; }
       recClear(); armed = false; render();
     });
-    bar.appendChild(copyBtn); bar.appendChild(dlBtn); bar.appendChild(clrBtn);
+    [copyBtn, dlBtn, syncBtn, clrBtn].forEach(b => bar.appendChild(b));
+    search.addEventListener("input", render);
+
+    /** Records matching the search box, newest first. */
+    function filtered() {
+      const q = search.value.trim().toLowerCase();
+      const hit = r => {
+        if (!q) return true;
+        const hay = [r.module, r.group, r.say, r.result,
+          (r.inputs || []).map(x => x.join(" ")).join(" "),
+          (r.table ? (r.table.rows || []).map(x => x.join(" ")).join(" ") : "")
+        ].join(" ").toLowerCase();
+        return hay.includes(q);
+      };
+      return RECORDS.filter(hit).slice().sort((a, b) => (b.t || 0) - (a.t || 0));
+    }
+
+    function renderSync() {
+      const label = { ok: "✓ ", busy: "… ", local: "! ", off: "" }[SYNC.state] || "";
+      syncLine.className = "tiny" + (SYNC.state === "local" ? " sync-warn" : "");
+      syncLine.textContent = SYNC.state === "off"
+        ? "本机 " + RECORDS.length + " 条，尚未与云端同步"
+        : label + (SYNC.msg || "") + "　·　共 " + RECORDS.length + " 条";
+    }
 
     function render() {
+      renderSync();
       list.innerHTML = "";
-      if (!RECORDS.length) {
-        list.appendChild(h("div", { class: "note" },
-          "还没有记录。去任一模块算一次，点结果下面的「记一笔」。"));
+      const recs = filtered();
+      if (!recs.length) {
+        list.appendChild(h("div", { class: "note" }, RECORDS.length
+          ? "没有匹配「" + search.value.trim() + "」的记录。"
+          : "还没有记录。去任一模块算一次，点结果下面的「记一笔」。"));
         preview.textContent = "";
         return;
       }
-      RECORDS.forEach((r, i) => {
-        const del = h("button", { class: "lib-btn", type: "button" }, "删除");
-        del.addEventListener("click", () => { recRemove(r.id); render(); });
-        list.appendChild(h("div", { class: "rec-item" },
-          h("div", { class: "rec-item-head" },
-            h("span", { class: "rec-n" }, String(i + 1)),
-            h("span", { class: "rec-mod" }, r.module),
-            h("span", { class: "rec-t" }, C.stamp(r.t)),
-            del),
-          h("pre", { class: "rec-body" }, C.formatRecord(r, i + 1))));
+      // group by experiment label, ungrouped last
+      const groups = [];
+      recs.forEach(r => {
+        const key = r.group || "";
+        let g = groups.find(x => x.key === key);
+        if (!g) { g = { key, items: [] }; groups.push(g); }
+        g.items.push(r);
       });
-      preview.textContent = C.formatRecords(RECORDS, Date.now());
+      groups.sort((a, b) => (a.key ? 0 : 1) - (b.key ? 0 : 1));
+
+      groups.forEach(g => {
+        const body = h("div");
+        const head = h("button", { class: "grp-head", type: "button" },
+          h("span", { class: "grp-name" }, g.key || "（未分组）"),
+          h("span", { class: "grp-n" }, g.items.length + " 条"));
+        let open = true;
+        head.addEventListener("click", () => {
+          open = !open;
+          body.style.display = open ? "" : "none";
+          head.classList.toggle("closed", !open);
+        });
+        g.items.forEach(r => {
+          const n = RECORDS.indexOf(r) + 1;
+          const del = h("button", { class: "lib-btn", type: "button" }, "删除");
+          del.addEventListener("click", () => { recRemove(r.id); render(); });
+          const kids = [
+            h("span", { class: "rec-mod" }, r.module),
+            h("span", { class: "rec-t" }, C.stamp(r.t))
+          ];
+          if (r.rerun && RESTORERS[r.rerun.module] !== undefined || r.rerun) {
+            const re = h("button", { class: "lib-btn", type: "button" }, "重做");
+            re.addEventListener("click", () => replay(r));
+            kids.push(re);
+          }
+          kids.push(del);
+          body.appendChild(h("div", { class: "rec-item" },
+            h("div", { class: "rec-item-head" }, kids),
+            h("pre", { class: "rec-body" }, C.formatRecord(r, n))));
+        });
+        list.appendChild(h("div", { class: "grp" }, head, body));
+      });
+      preview.textContent = C.formatRecords(recs, Date.now());
     }
+
+    /** Load a record back into the module that produced it. */
+    function replay(r) {
+      const target = r.rerun && r.rerun.module;
+      if (!target) return;
+      show(target);                       // builds the panel if first visit
+      const fn = RESTORERS[target];
+      if (!fn) { alert("这条记录来自不支持重做的模块。"); return; }
+      try { fn(r.rerun); } catch (e) { alert("重做失败：" + e.message); }
+    }
+
     recListeners.push(render);
     root.appendChild(h("div", null,
-      h("div", { class: "card" }, bar,
-        h("div", { class: "tiny" },
-          "「复制全部」在任何环境都能用；「下载 .txt」在 peiyetai.netlify.app 上可用，" +
-          "在 claude.ai 的 Artifact 链接里会被沙箱挡掉（那里请用复制）。" +
-          "表格用 | 分隔而不是空格对齐 —— 中英文宽度比在各种字体下都不是整数，" +
-          "空格对齐必然错位；| 在任何字体下都成立，也能用 Excel 的「分列」按 | 拆开。")),
+      h("div", { class: "card" },
+        h("div", { class: "fields" },
+          h("label", { class: "field" },
+            h("span", { class: "lab" }, h("span", null, "当前实验 / 批次"),
+              h("span", { class: "hint" }, "之后记的都会归到这一组")),
+            h("div", { class: "inrow" }, (groupIn.classList.add("solo"), groupIn))),
+          h("label", { class: "field" },
+            h("span", { class: "lab" }, h("span", null, "搜索")),
+            h("div", { class: "inrow" }, (search.classList.add("solo"), search)))),
+        h("div", { style: "margin-top:13px" }, bar),
+        syncLine,
+        h("div", { class: "tiny", style: "margin-top:8px" },
+          "「复制全部」「下载 .txt」只导出当前筛选结果。下载在 claude.ai 的 Artifact 里会被沙箱挡掉，那里请用复制。")),
       h("div", { class: "card" }, h("h3", null, "记录条目"), list),
       h("div", { class: "card" }, h("h3", null, "导出预览"), preview)));
     render();
+    recPull();
   }});
 
 /* ===========================================================================

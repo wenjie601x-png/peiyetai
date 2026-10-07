@@ -299,6 +299,31 @@ table.data .em{color:var(--accent); font-weight:600}
   .chiprow .chip{max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 }
 
+
+/* ---------- record groups / search / sync ------------------------------- */
+.rec-search, .rec-group-in{
+  width:100%; background:var(--surface); color:var(--ink);
+  border:1px solid var(--border); border-radius:var(--radius-sm);
+  padding:9px 11px; font-size:15px; font-family:var(--sans);
+}
+.rec-search:focus, .rec-group-in:focus{
+  outline:none; border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent);
+}
+@media (pointer:coarse){ .rec-search, .rec-group-in{font-size:16px} }
+.sync-warn{color:var(--warn)}
+.grp{margin-bottom:14px}
+.grp:last-child{margin-bottom:0}
+.grp-head{
+  display:flex; align-items:center; gap:10px; width:100%; cursor:pointer;
+  background:var(--surface-2); border:1px solid var(--border);
+  border-radius:var(--radius-sm); padding:9px 12px; margin-bottom:9px; text-align:left;
+}
+.grp-head:hover{border-color:var(--border-strong)}
+.grp-head.closed{margin-bottom:0}
+.grp-name{flex:1; font-size:13.5px; font-weight:600; color:var(--ink)}
+.grp-n{font-family:var(--mono); font-size:11.5px; color:var(--muted)}
+.rec-item-head .lib-btn{flex:0 0 auto}
+
 /* ---------- records ----------------------------------------------------- */
 .card-head{display:flex; align-items:center; gap:10px; margin-bottom:13px}
 .card-head h3{margin:0; flex:1}

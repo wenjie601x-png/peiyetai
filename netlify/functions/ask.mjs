@@ -44,7 +44,11 @@ JSON 结构（只填你能确定的字段，其余省略）：
 - bufferSystem 只能是：phosphate_na, phosphate_k, tris, acetate, citrate, hepes, mes,
   carbonate, ammonia。
 - formula 填用户给出的化学式（如 NaCl、K3[Fe(CN)6]），没给就省略。
-- 完全看不懂就 {"intent":"unknown","understood":"..."}。`;
+- 完全看不懂就 {"intent":"unknown","understood":"..."}。
+
+如果用户提到"上次"、"之前"、"再配一次"、"同样的"，会在下面给出最近的配液记录，
+从中取出对应的参数，再按用户这次的修改（比如换体积）调整。
+记录是只读的事实，用户这次说的优先。`;
 
 const MAX_INPUT = 500;
 
@@ -61,10 +65,17 @@ export default async (req) => {
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) return json({ error: "服务端还没配置 DEEPSEEK_API_KEY" }, 503);
 
-  let text;
+  let text, history = null;
   try {
     const body = await req.json();
     text = String(body && body.text || "").trim();
+    // recent records give "上次那个再配一次" something to resolve against
+    if (Array.isArray(body.history) && body.history.length) {
+      history = body.history.slice(-8).map(r => ({
+        时间: r.t, 实验: r.group || null, 模块: r.module,
+        输入: r.inputs || null, 结果: r.result || null
+      }));
+    }
   } catch (e) {
     return json({ error: "请求体不是合法 JSON" }, 400);
   }
@@ -83,8 +94,10 @@ export default async (req) => {
                  authorization: "Bearer " + key },
       body: JSON.stringify({
         model: "deepseek-chat",
-        messages: [{ role: "system", content: SYSTEM },
-                   { role: "user", content: text }],
+        messages: [{ role: "system", content: SYSTEM }].concat(
+          history ? [{ role: "user",
+            content: "最近的配液记录（只读参考）：\n" + JSON.stringify(history) }] : [],
+          [{ role: "user", content: text }]),
         response_format: { type: "json_object" },
         temperature: 0,
         max_tokens: 600
