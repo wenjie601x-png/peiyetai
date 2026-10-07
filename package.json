@@ -1,0 +1,9 @@
+{
+  "name": "peiyetai",
+  "private": true,
+  "type": "module",
+  "description": "配液台 — 电化学实验配液计算器",
+  "dependencies": {
+    "@netlify/blobs": "^11.1.3"
+  }
+}
