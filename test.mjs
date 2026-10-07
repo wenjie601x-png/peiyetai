@@ -323,6 +323,34 @@ const polyMolar = A("配 20 mL 1 mM 壳聚糖，mol wt 50,000-190,000 Da");
 ok("聚合物按摩尔浓度被拒绝", polyMolar.ok, false);
 ok("  说明范围跨多少倍",    /倍/.test(polyMolar.missing.join("")), true);
 
+// A real sentence carries percent signs that are NOT things to prepare: a
+// bottle purity and a material property. Treating them as targets produced
+// "量取 冰醋酸 9.97 mL" — confidently wrong, the one outcome to make impossible.
+const FOUR_PCT = "配制 10 mL 含 1% (w/v) 壳聚糖、溶剂为 2% (v/v) 醋酸的溶液，" +
+  "使用冰醋酸 (99.7%, 密度 1.04 g/mL) 和去离子水，壳聚糖为 Sigma 448869 低分子量 " +
+  "(Mv 50,000-190,000 Da, 脱乙酰度 75-85%)";
+const fp = A(FOUR_PCT);
+ok("四个百分号的真实句子可解", fp.ok, true);
+ok("  只认出 2 个配制组分",    fp.items.length, 2, 1e-12);
+ok("  壳聚糖 1% w/v → 100 mg", fp.items[0].amount, "100 mg");
+ok("  醋酸 2% v/v → 200 µL",   fp.items[1].amount, "200 µL");
+ok("  壳聚糖是称取不是量取",    fp.items[0].how, "称取");
+ok("  忽略 99.7% 和 85%",
+   (fp.echo["已忽略的描述性百分数"] || []).length, 2, 1e-12);
+ok("  括号里的瓶规格被采用",   /按你给的 99\.7% 纯度/.test(fp.items[1].note || ""), true);
+ok("  不再出现 9.97 mL",       fp.items.every(i => i.amount !== "9.97 mL"), true);
+// and the local answer must equal the AI answer for the same sentence
+const fpAI = CORE.solveFromLLM({ intent:"percent", volume:{value:10,unit:"mL"},
+  components:[{name:"壳聚糖",percent:1,basis:"w/v"},
+              {name:"醋酸",percent:2,basis:"v/v",purity:99.7,density:1.04}] }, FOUR_PCT);
+ok("  本地与 AI 结果一致",
+   fp.items.map(i=>i.amount).join("|"), fpAI.items.map(i=>i.amount).join("|"));
+
+// when percents and reagents cannot be matched one-to-one, refuse
+const mismatched = A("配 10 mL 1% 和 2% 和 3% 壳聚糖");
+ok("数量对不上就拒绝",        mismatched.ok, false);
+ok("  说明对不上号",          /配不对号/.test(mismatched.missing.join("")), true);
+
 // unit-case discipline: lower-case "mm" is millimetre, not millimolar
 const mmLower = A("配 50 mL 10 mm NaCl");
 ok("小写 mm 不当作 mM",    mmLower.ok, false);

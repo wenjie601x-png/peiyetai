@@ -95,6 +95,60 @@ function findMolarMassRange(text) {
   return { lo: f(m[1]) * k, hi: f(m[2]) * k, raw: m[0] };
 }
 
+
+/* ---------- telling a target concentration from a bottle spec -------------
+   A sentence like
+     "含 1% (w/v) 壳聚糖、2% (v/v) 醋酸，用冰醋酸 (99.7%, 密度 1.04 g/mL)，
+      壳聚糖 (Mv 50,000-190,000 Da, 脱乙酰度 75-85%)"
+   carries four percent signs but only two of them are things to prepare. The
+   other two describe the bottle and the material. Treating all four as targets
+   produced "量取 冰醋酸 9.97 mL" — confidently wrong, which is the one outcome
+   this parser is supposed to make impossible.                               */
+function parenDepth(text) {
+  const d = new Array(text.length).fill(0);
+  let k = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "(") k++;
+    d[i] = k;
+    if (text[i] === ")") k = Math.max(0, k - 1);
+  }
+  return d;
+}
+const SPEC_WORDS = /(纯度|含量|assay|purity|脱乙酰度|deacetyl|水解度|取代度)\s*[:：]?\s*$/i;
+
+/** Mark each percent quantity as a preparation target or a descriptive spec. */
+function classifyPercents(text, pcts) {
+  const depth = parenDepth(text);
+  return pcts.map(p => {
+    const before = text.slice(0, p.at);
+    // the trailing half of a range ("75-85%") describes a property, not a target
+    const isRangeTail = /\d\s*-\s*$/.test(before);
+    // parenthetical content is supplementary: "(99.7%, 密度 1.04 g/mL)".
+    // note "1% (w/v)" puts the paren AFTER the percent, so it stays a target
+    const inParen = depth[p.at] > 0;
+    const afterSpecWord = SPEC_WORDS.test(before.slice(-12));
+    return Object.assign({}, p,
+      { role: (isRangeTail || inParen || afterSpecWord) ? "spec" : "target" });
+  });
+}
+
+/** Pull "(99.7%, 密度 1.04 g/mL)" off the reagent it follows. */
+function bottleSpecs(text, reagents) {
+  const out = new Map();
+  reagents.forEach(f => {
+    const tail = text.slice(f.at, f.at + 80);
+    const grp = /\(([^)]*)\)/.exec(tail);
+    if (!grp) return;
+    const inner = grp[1];
+    const pct = /(\d+(?:\.\d+)?)\s*%/.exec(inner);
+    const rho = /(?:密度|ρ|density)?\s*(\d+(?:\.\d+)?)\s*g\s*\/\s*(?:ml|mL|cm3|cm³)/i.exec(inner);
+    if (!pct && !rho) return;
+    out.set(f.r.n, { w: pct ? parseFloat(pct[1]) / 100 : null,
+                     rho: rho ? parseFloat(rho[1]) : null });
+  });
+  return out;
+}
+
 /* ---------- reagent matching --------------------------------------------- */
 /** Longest-first so "醋酸钠" beats "醋酸" and "乙酸" maps to acetic acid. */
 const NAME_ALIASES = [
@@ -236,22 +290,44 @@ function interpret(rawText, deps) {
   /* ---- percent ---- */
   if (det.intent === "percent") {
     if (!totalV) missing.push("配制体积（例如 20 mL）");
-    if (!pcts.length) missing.push("百分浓度（例如 1%）");
+    const classed = classifyPercents(text, pcts);
+    const targets = classed.filter(x => x.role === "target");
+    const specs = classed.filter(x => x.role === "spec");
+    if (!targets.length) missing.push("要配的百分浓度（例如 1%）");
     if (missing.length) return Object.assign(base, { ok: false, missing });
-    // pair each percentage with the nearest reagent mentioned before/after it
-    const comps = pcts.map(p => {
-      let best = null, bestD = Infinity;
-      reagents.forEach(f => {
-        const d = Math.abs(f.at - p.at);
-        if (d < bestD) { bestD = d; best = f.r; }
-      });
-      const isLiquid = !!(best && best.rho);
+
+    // Guessing which reagent each percent belongs to is only safe when the
+    // counts line up. Otherwise refuse — a mis-paired percent silently becomes
+    // a wrong mass on the balance.
+    if (reagents.length && targets.length !== reagents.length) {
+      return Object.assign(base, { ok: false, missing: [
+        `句子里有 ${targets.length} 个要配的百分浓度，却识别到 ${reagents.length} 个试剂` +
+        `（${reagents.map(f => f.r.n).join("、")}），配不对号。` +
+        `请一个物质一句话写清楚，或者切到 AI 解析。`] });
+    }
+    const bottles = bottleSpecs(text, reagents);
+    const comps = targets.map((p, i) => {
+      // counts match, so pair in the order they appear
+      const best = reagents.length ? reagents[i].r : null;
+      let reagent = best;
+      let specSource = "library";
+      if (best && bottles.has(best.n)) {
+        const b = bottles.get(best.n);
+        reagent = Object.assign({}, best,
+          b.w != null ? { w: b.w } : {}, b.rho != null ? { rho: b.rho } : {});
+        specSource = "user";
+      }
+      const isLiquid = !!(reagent && reagent.rho);
       return {
-        reagent: best, percent: p.value,
+        reagent, percent: p.value,
         basis: p.basis || (isLiquid ? "v/v" : "w/v"),
-        basisAssumed: !p.basis
+        basisAssumed: !p.basis, specSource
       };
     });
+    if (specs.length) {
+      base.echo["已忽略的描述性百分数"] =
+        specs.map(x => x.value + "%（纯度/物性，不是要配的浓度）");
+    }
     return Object.assign(base, { ok: true, route: "percent",
       params: { Vfinal: Vbase, components: comps, mwRange },
       summary: `配 ${totalV.value} ${totalV.unit}，` +
