@@ -384,7 +384,7 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
           showError((data && data.error) || `服务端返回 ${resp.status}`);
           return;
         }
-        r = C.solveFromLLM(data.params);
+        r = C.solveFromLLM(data.params, text);
       } catch (e) {
         busy = false;
         showError("连不上解析服务：" + e.message + "（离线时请切回「本地规则」）");

@@ -347,6 +347,16 @@ ok("  结果与本地一致",      lm.items[0].amount, "29.22 mg");
 const lp = L({ intent:"percent", volume:{value:20,unit:"mL"},
   components:[{name:"壳聚糖",percent:1,basis:"w/v"},{name:"乙酸",percent:1,basis:"v/v"}] });
 ok("AI→百分比路线",        lp.items.length, 2, 1e-12);
+// the model infers w/v vs v/v; unless the USER wrote it, that stays a flagged
+// assumption — it is the guess that most changes the answer
+const lpNoBasis = CORE.solveFromLLM({ intent:"percent", volume:{value:20,unit:"mL"},
+  components:[{name:"壳聚糖",percent:1,basis:"w/v"}] }, "配20毫升百分之一的壳聚糖");
+ok("用户没写基准→仍提示假设",
+   /按 <b>w\/v<\/b>/.test(lpNoBasis.warnings.join("")), true);
+const lpUserBasis = CORE.solveFromLLM({ intent:"percent", volume:{value:20,unit:"mL"},
+  components:[{name:"壳聚糖",percent:1,basis:"w/v"}] }, "配 20 mL 1%(w/v) 壳聚糖");
+ok("用户写了基准→不再提示",
+   lpUserBasis.warnings.join("").indexOf("按 <b>w/v</b>") < 0, true);
 ok("  壳聚糖 200 mg",       lp.items[0].amount, "200 mg");
 ok("  乙酸 200 µL",         lp.items[1].amount, "200 µL");
 

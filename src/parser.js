@@ -443,8 +443,13 @@ function findReagentByName(name, deps) {
   return hits.length ? hits[0].r : null;
 }
 
-function planFromLLM(p, deps) {
+function planFromLLM(p, deps, originalText) {
   p = p || {};
+  // The model always fills `basis`, inferring it when the user did not say.
+  // Only the user's own words count as "stated" — otherwise the assumption
+  // notice would silently disappear on the AI path, hiding the single most
+  // consequential guess (w/v vs v/v differ by a density factor).
+  const userStatedBasis = /w\s*\/\s*v|v\s*\/\s*v|w\s*\/\s*w/i.test(String(originalText || ""));
   const echo = {
     "AI 的理解": p.understood || null,
     体积: p.volume ? [p.volume.value + " " + p.volume.unit] : [],
@@ -508,7 +513,7 @@ function planFromLLM(p, deps) {
           const basis = /^(w\/v|v\/v|w\/w)$/.test(c.basis || "")
             ? c.basis : (liquid ? "v/v" : "w/v");
           return { reagent: reagent || { n: c.name || "（未识别）" },
-                   percent: c.percent, basis, basisAssumed: !c.basis };
+                   percent: c.percent, basis, basisAssumed: !userStatedBasis };
         }) },
       summary: `配 ${V.value} ${V.unit}，` +
         comps.map(c => `${c.percent}% ${c.name || "（未识别）"}`).join(" + ") });

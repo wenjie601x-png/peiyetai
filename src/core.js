@@ -913,12 +913,12 @@ function formatRecords(recs, nowMs) {
 
 /* ---------- 9. exports ---------------------------------------------------- */
 /** LLM params in, the same renderable answer out as the local path. */
-function solveFromLLM(params) {
+function solveFromLLM(params, originalText) {
   const deps = {
     REAGENTS: REAGENTS, BUFFERS: BUFFERS, DIMS: DIMS, molarMass: molarMass,
     factorOf: factorOf, auto: auto, sig: sig, buffer: buffer, weighError: weighError
   };
-  const plan = planFromLLM(params, deps);
+  const plan = planFromLLM(params, deps, originalText);
   return plan.ok ? solveRequest(plan, deps) : plan;
 }
 
