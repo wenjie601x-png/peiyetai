@@ -2296,14 +2296,16 @@ async function recPush(only) {
   const list = Array.isArray(only) ? only : RECORDS;
   if (!list.length) return;
   try {
-    const r = await fetch("/api/records", {
+    const r = await apiFetch("/api/records", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ records: list })
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
     setSync("ok", "已同步");
   } catch (e) {
-    setSync("local", "只存在本机（" + e.message + "）");
+    setSync("local", e.name === "AuthExpired"
+      ? "登录已过期，只存在本机 —— 刷新页面可恢复同步"
+      : "只存在本机（" + e.message + "）");
   }
 }
 
@@ -2312,7 +2314,7 @@ async function recPush(only) {
 async function recPull() {
   setSync("busy", "正在同步…");
   try {
-    const r = await fetch("/api/records");
+    const r = await apiFetch("/api/records");
     if (!r.ok) throw new Error("HTTP " + r.status);
     const data = await r.json();
     const remote = Array.isArray(data.records) ? data.records : [];
@@ -2328,7 +2330,9 @@ async function recPull() {
     setSync("ok", "已同步 " + RECORDS.length + " 条");
     if (localOnly.length) recPush(localOnly);      // push what only we had
   } catch (e) {
-    setSync("local", "云端读取失败，只用本机记录");
+    setSync("local", e.name === "AuthExpired"
+      ? "登录已过期，暂时只用本机记录 —— 刷新页面可恢复"
+      : "云端读取失败，只用本机记录");
   }
 }
 
@@ -2438,6 +2442,35 @@ function grabTable(tbl) {
   return (head.length && rows.length) ? { head, rows } : null;
 }
 
+
+/* ---------- API calls behind the site's login gate ------------------------
+   Team protection expires the session silently. Once it does, every /api/*
+   request is answered with the gate's HTML login page instead of JSON, and a
+   bare response.json() then fails with "Unexpected token '<'" — a message that
+   tells the user nothing about what actually happened or how to fix it. Detect
+   that case explicitly and say "登录过期，刷新一下". */
+class AuthExpired extends Error {
+  constructor() { super("登录已过期"); this.name = "AuthExpired"; }
+}
+async function apiFetch(url, opts) {
+  const r = await fetch(url, opts);
+  const ct = r.headers.get("content-type") || "";
+  if (r.status === 401 || (!ct.includes("application/json") && r.status !== 204))
+    throw new AuthExpired();   // JSON error bodies (404/502…) pass through
+  return r;
+}
+/** A banner that explains the expiry and offers the one action that fixes it. */
+function authExpiredCard() {
+  const btn = h("button", { class: "chip", type: "button" }, "重新登录并刷新");
+  btn.addEventListener("click", () => location.reload());
+  return h("div", { class: "card" },
+    h("div", { class: "note warn", html:
+      "<b>登录已过期。</b>这个站点是私有的，Netlify 的登录会话过一段时间会失效 —— " +
+      "页面还开着，但联网功能（AI 解析、试剂查询、记录同步）会被挡住。刷新一下即可恢复，" +
+      "已填的内容请先记下来。" }),
+    h("div", { class: "chiprow", style: "margin-top:10px" }, btn));
+}
+
 /* ---------- copy / download ---------------------------------------------- */
 async function copyText(text) {
   try {
@@ -2509,7 +2542,7 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
       busy = true; render();
       let r;
       try {
-        const resp = await fetch("/api/ask", {
+        const resp = await apiFetch("/api/ask", {
           method: "POST", headers: { "content-type": "application/json" },
           // the last few records let "上次那个再配一次" resolve to real numbers
           body: JSON.stringify({ text, history: RECORDS.slice(-8).map(r => ({
@@ -2525,7 +2558,11 @@ mod({ id: "ask", group: "文字输入", name: "说一句话", title: "直接说�
         r = C.solveFromLLM(data.params, text);
       } catch (e) {
         busy = false;
-        showError("连不上解析服务：" + e.message + "（离线时请切回「本地规则」）");
+        if (e.name === "AuthExpired") {
+          out.innerHTML = ""; out.appendChild(authExpiredCard());
+        } else {
+          showError("连不上解析服务：" + e.message + "（离线时请切回「本地规则」）");
+        }
         return;
       }
       busy = false;
@@ -3784,13 +3821,14 @@ mod({ id: "chem", group: "工具", name: "试剂查询", title: "试剂查询 ·
       out.appendChild(h("div", { class: "card" }, h("div", { class: "tiny" }, "正在查 PubChem…")));
       let d;
       try {
-        const r = await fetch("/api/chem?q=" + encodeURIComponent(term));
+        const r = await apiFetch("/api/chem?q=" + encodeURIComponent(term));
         d = await r.json();
       } catch (e) {
         busy = false;
         out.innerHTML = "";
-        out.appendChild(h("div", { class: "card" },
-          h("div", { class: "note danger" }, "连不上查询服务：" + e.message)));
+        out.appendChild(e.name === "AuthExpired" ? authExpiredCard()
+          : h("div", { class: "card" },
+              h("div", { class: "note danger" }, "连不上查询服务：" + e.message)));
         return;
       }
       busy = false;
@@ -3835,7 +3873,7 @@ mod({ id: "chem", group: "工具", name: "试剂查询", title: "试剂查询 ·
       const saveBtn = h("button", { class: "chip", type: "button" }, "存进试剂库");
       saveBtn.addEventListener("click", async () => {
         try {
-          const r = await fetch("/api/chem", { method: "POST",
+          const r = await apiFetch("/api/chem", { method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ reagent: { name: d.query, en: d.term,
               formula: d.formula, mass: d.mass, cas: d.cas, t: Date.now() } }) });
