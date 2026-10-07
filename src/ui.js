@@ -1712,6 +1712,152 @@ mod({ id: "records", group: "记录", name: "实验记录", title: "实验记录
     recPull();
   }});
 
+
+/* ---- 11. 试剂查询 -------------------------------------------------------- */
+const SUPPLIERS = [
+  // every URL below was opened in a real browser and confirmed to land on a
+  // working search page; Sinopharm's search is a SPA with no linkable query,
+  // so it gets the homepage rather than a URL that would 404
+  { n: "Sigma-Aldrich", u: q => "https://www.sigmaaldrich.com/SG/en/search/" +
+      encodeURIComponent(q) + "?focus=products&term=" + encodeURIComponent(q) + "&type=product",
+    prefer: "en" },
+  { n: "麦克林", u: q => "https://www.macklin.cn/search/" + encodeURIComponent(q) },
+  { n: "阿拉丁", u: q => "https://www.aladdin-e.com/zh_cn/catalogsearch/result/?q=" +
+      encodeURIComponent(q) },
+  { n: "国药", u: () => "https://www.reagent.com.cn/", note: "站内搜索无法直链，请在首页搜" }
+];
+
+mod({ id: "chem", group: "工具", name: "试剂查询", title: "试剂查询 · PubChem",
+  desc: "输试剂名（中英文皆可）或 CAS 号，查分子式、分子量、CAS。数据来自 PubChem（免费公开）。查到的分子量会和本地化学式解析器互相校对，不一致会明确报警。",
+  build(root) {
+    const q = h("input", { type: "text", class: "rec-search",
+      placeholder: "例如 铁氰化钾 / potassium ferricyanide / 13746-66-2", autocomplete: "off" });
+    const out = h("div");
+    let busy = false, last = null;
+
+    const go = h("button", { class: "chip", type: "button" }, "查询");
+    go.addEventListener("click", () => run());
+    q.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+
+    async function run() {
+      const term = q.value.trim();
+      if (!term) return;
+      if (busy) return;
+      busy = true;
+      out.innerHTML = "";
+      out.appendChild(h("div", { class: "card" }, h("div", { class: "tiny" }, "正在查 PubChem…")));
+      let d;
+      try {
+        const r = await fetch("/api/chem?q=" + encodeURIComponent(term));
+        d = await r.json();
+      } catch (e) {
+        busy = false;
+        out.innerHTML = "";
+        out.appendChild(h("div", { class: "card" },
+          h("div", { class: "note danger" }, "连不上查询服务：" + e.message)));
+        return;
+      }
+      busy = false;
+      paint(d, term);
+    }
+
+    function paint(d, term) {
+      out.innerHTML = "";
+      if (!d.ok) {
+        out.appendChild(h("div", { class: "card" },
+          h("div", { class: "note warn" }, d.error || "查不到"),
+          h("div", { class: "tiny", style: "margin-top:10px" }, "也可以直接去供应商站查："),
+          supplierRow(term, term)));
+        return;
+      }
+      last = d;
+
+      // cross-check: PubChem's molar mass against our own formula parser
+      let local = null, delta = null;
+      try { local = C.molarMass(d.formula).mass; delta = Math.abs(local - d.mass); }
+      catch (e) { local = null; }
+      const agree = local != null && delta < Math.max(0.05, d.mass * 2e-4);
+
+      const rows = [
+        ["分子式", pretty(d.formula)],
+        ["分子量", C.sig(d.mass, 6) + " g/mol"],
+        ["CAS", d.cas || "（PubChem 未给出）"],
+        ["IUPAC 名", d.iupac || "—"],
+        ["来源", d.source + (d.via !== "原文" ? "　·　" + d.via + "：" + d.term : "")]
+      ];
+      const tbl = h("table", { class: "data" }, h("tbody", null,
+        rows.map(r => h("tr", null,
+          h("td", null, r[0]),
+          h("td", { style: "color:var(--ink)" }, r[1])))));
+
+      const useBtn = h("button", { class: "chip", type: "button" }, "填进配制页");
+      useBtn.addEventListener("click", () => {
+        show("prep");
+        const fn = RESTORERS.prep;
+        if (fn) fn({ fields: { M: { value: C.sig(d.mass, 6), unit: "g/mol" } } });
+      });
+      const saveBtn = h("button", { class: "chip", type: "button" }, "存进试剂库");
+      saveBtn.addEventListener("click", async () => {
+        try {
+          const r = await fetch("/api/chem", { method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ reagent: { name: d.query, en: d.term,
+              formula: d.formula, mass: d.mass, cas: d.cas, t: Date.now() } }) });
+          flash(saveBtn, r.ok ? "已保存 ✓" : "保存失败", !r.ok);
+        } catch (e) { flash(saveBtn, "保存失败", true); }
+      });
+
+      out.appendChild(h("div", { class: "card" },
+        h("div", { class: "card-head" }, h("h3", null, d.query),
+          h("div", { class: "chiprow" }, useBtn, saveBtn)),
+        h("div", { class: "tablewrap" }, tbl),
+        agree
+          ? mkNote({ kind: "", text: `本地化学式解析器按 <b>${pretty(d.formula)}</b> 算得 ` +
+              `<b>${C.sig(local, 6)} g/mol</b>，与 PubChem 一致。` })
+          : (local == null
+              ? mkNote({ kind: "warn", text: "本地解析器无法解析这个分子式，没法交叉校对。" })
+              : mkNote({ kind: "danger", text:
+                  `<b>对不上：</b>PubChem 给 ${C.sig(d.mass,6)}，本地按 ${pretty(d.formula)} ` +
+                  `算得 ${C.sig(local,6)}，差 ${C.sig(delta,3)} g/mol。` +
+                  `可能是同位素标记、水合物差异或数据有误 —— 用之前先弄清楚。` })),
+        h("div", { class: "tiny", style: "margin-top:12px" },
+          "货号、纯度、价格、现货在供应商站看（本工具不抓取这些数据）："),
+        supplierRow(d.term, d.query)));
+    }
+
+    function supplierRow(en, zh) {
+      const row = h("div", { class: "chiprow", style: "margin-top:7px" });
+      SUPPLIERS.forEach(sp => {
+        const term = sp.prefer === "en" ? (en || zh) : (zh || en);
+        const a = h("a", { class: "chip", href: sp.u(term),
+          target: "_blank", rel: "noopener noreferrer" }, sp.n);
+        if (sp.note) a.title = sp.note;
+        row.appendChild(a);
+      });
+      return row;
+    }
+
+    const chips = h("div", { class: "chiprow" },
+      ["铁氰化钾", "potassium ferricyanide", "13746-66-2", "sodium pyruvate", "HEPES"]
+        .map(x => {
+          const b = h("button", { class: "chip", type: "button" }, x);
+          b.addEventListener("click", () => { q.value = x; run(); });
+          return b;
+        }));
+
+    root.appendChild(h("div", null,
+      h("div", { class: "card" },
+        h("div", { class: "fields" },
+          h("label", { class: "field" },
+            h("span", { class: "lab" }, h("span", null, "试剂名或 CAS 号")),
+            h("div", { class: "inrow" }, (q.classList.add("solo"), q)))),
+        h("div", { class: "chiprow", style: "margin-top:11px" }, go),
+        h("div", { class: "tiny", style: "margin-top:10px" },
+          "PubChem 没有中文索引 —— 中文名会先由 AI 译成英文/CAS 再查，所以中文查询需要联网且已配置 API key。"),
+        chips),
+      out));
+  }});
+
 /* ===========================================================================
    shell wiring
    ========================================================================= */
