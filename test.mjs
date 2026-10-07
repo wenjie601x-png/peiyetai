@@ -362,6 +362,23 @@ ok("  乙酸 200 µL",         lp.items[1].amount, "200 µL");
 
 const lb = L({ intent:"buffer", volume:{value:500,unit:"mL"},
   concentration:{value:0.1,unit:"M"}, pH:7.4, bufferSystem:"phosphate_na" });
+// a bottle spec the user stated must beat the library's default, and the note
+// must say which one it used — a number contradicting the echo destroys trust
+const libSpec = CORE.solveFromLLM({ intent:"percent", volume:{value:10,unit:"mL"},
+  components:[{name:"醋酸",percent:2,basis:"v/v"}] }, "配 10 mL 2%(v/v) 醋酸");
+ok("没给瓶规格→用试剂库值",  /按试剂库默认 99\.5% 纯度/.test(libSpec.items[0].note || ""), true);
+ok("  并提示可以写自己的",   /瓶子规格不同/.test(libSpec.items[0].note || ""), true);
+ok("  纯醋酸体积按 99.5% 算", /201 µL/.test(libSpec.items[0].note || ""), true);
+
+const userSpec = CORE.solveFromLLM({ intent:"percent", volume:{value:10,unit:"mL"},
+  components:[{name:"醋酸",percent:2,basis:"v/v",purity:99.7,density:1.04}] },
+  "配 10 mL 2%(v/v) 醋酸，冰醋酸 99.7%，密度 1.04");
+ok("给了瓶规格→用你的值",    /按你给的 99\.7% 纯度/.test(userSpec.items[0].note || ""), true);
+ok("  密度也用你的",         /ρ 1\.04 g\/mL/.test(userSpec.items[0].note || ""), true);
+ok("  不再出现 99.5%",       (userSpec.items[0].note || "").indexOf("99.5") < 0, true);
+// 200 µL / 0.997 = 200.6 µL, not the 201.0 µL the library value gives
+ok("  纯醋酸体积按 99.7% 重算", /200\.6 µL/.test(userSpec.items[0].note || ""), true);
+
 ok("AI→缓冲液路线",        lb.items[0].amount, "1.212 g");
 ok("  仍带实测 pH 警告",    /pH 计实测/.test(lb.warnings.join("")), true);
 

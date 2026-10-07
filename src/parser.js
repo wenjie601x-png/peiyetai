@@ -318,9 +318,13 @@ function solveRequest(plan, deps) {
         const item = { what: name, how: "量取",
           amount: auto(vol, "volume").text,
           formula: `V = ${c.percent}% × ${auto(V,"volume").text} = ${auto(vol,"volume").text}` };
-        if (c.reagent && c.reagent.rho && c.reagent.w < 0.999)
-          item.note = `按原瓶液体体积计。瓶子是 ${Math.round(c.reagent.w*1000)/10}% 纯度，` +
-                      `若要 ${c.percent}% 的是纯${name}，需 ${auto(vol/c.reagent.w,"volume").text}。`;
+        if (c.reagent && c.reagent.rho && c.reagent.w < 0.999) {
+          const src = c.specSource === "user" ? "按你给的" : "按试剂库默认";
+          item.note = `按原瓶液体体积计。${src} ${Math.round(c.reagent.w*10000)/100}% 纯度` +
+                      (c.reagent.rho ? `、ρ ${c.reagent.rho} g/mL` : "") +
+                      `，若要 ${c.percent}% 的是纯${name}，需 ${auto(vol/c.reagent.w,"volume").text}。` +
+                      (c.specSource === "user" ? "" : "　瓶子规格不同的话在描述里写出来。");
+        }
         out.items.push(item);
       } else if (c.basis === "w/w") {
         const mass = c.percent / 100 * V * 1000;        // g, assuming ρ≈1 g/mL
@@ -512,8 +516,23 @@ function planFromLLM(p, deps, originalText) {
           const liquid = !!(reagent && reagent.rho);
           const basis = /^(w\/v|v\/v|w\/w)$/.test(c.basis || "")
             ? c.basis : (liquid ? "v/v" : "w/v");
-          return { reagent: reagent || { n: c.name || "（未识别）" },
-                   percent: c.percent, basis, basisAssumed: !userStatedBasis };
+          // a bottle spec the user actually stated overrides the library,
+          // and we record which one was used so the note can say so — a
+          // number that contradicts the echo above it destroys trust faster
+          // than a small numerical error does
+          let r = reagent || { n: c.name || "（未识别）" };
+          const userPurity = isFinite(c.purity) ? Number(c.purity) / 100 : null;
+          const userRho = isFinite(c.density) ? Number(c.density) : null;
+          let specSource = "library";
+          if (userPurity != null || userRho != null) {
+            r = Object.assign({}, r, {
+              w: userPurity != null ? userPurity : r.w,
+              rho: userRho != null ? userRho : r.rho
+            });
+            specSource = "user";
+          }
+          return { reagent: r, percent: c.percent, basis,
+                   basisAssumed: !userStatedBasis, specSource };
         }) },
       summary: `配 ${V.value} ${V.unit}，` +
         comps.map(c => `${c.percent}% ${c.name || "（未识别）"}`).join(" + ") });

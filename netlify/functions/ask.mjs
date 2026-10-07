@@ -20,7 +20,8 @@ JSON 结构（只填你能确定的字段，其余省略）：
 {
   "intent": "percent" | "molar" | "dilute" | "buffer" | "massconc" | "unknown",
   "volume": {"value": 20, "unit": "mL"},
-  "components": [{"name": "壳聚糖", "percent": 1, "basis": "w/v"}],
+  "components": [{"name": "壳聚糖", "percent": 1, "basis": "w/v",
+                  "purity": 99.7, "density": 1.04}],
   "concentration": {"value": 10, "unit": "mM"},
   "stock": {"value": 1, "unit": "M"},
   "molarMass": {"value": 180.16, "unit": "g/mol"},
@@ -35,6 +36,8 @@ JSON 结构（只填你能确定的字段，其余省略）：
 - intent 判断：出现百分比→percent；出现 pH 且提到缓冲液/PBS/Tris→buffer；
   提到母液/稀释/取多少→dilute；只有摩尔浓度→molar；mg/mL 这类→massconc。
 - basis：固体默认 "w/v"，液体试剂（乙酸、盐酸等）默认 "v/v"，用户写明就按用户的。
+- purity / density：**只有用户明确说出瓶子规格时才填**（如"99.7% 的冰醋酸"、"密度 1.04"）。
+  用户没说就省略这两个字段，不要自己填试剂的常见值。purity 用百分数（99.7 不是 0.997）。
 - 单位原样保留用户写的（mL、µL、L、mM、µM、M、nM、g/mol、Da、kDa、mg/mL、g/L）。
 - 用户给的是分子量**范围**（如 50,000-190,000 Da）时，填 molarMassRange，不要填 molarMass，
   也不要自己取中值或上下限。
